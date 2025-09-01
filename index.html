@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>POINT — Multipliers Trading</title>
+
+<!-- Lightweight-Charts (candles) -->
+<script src="https://unpkg.com/lightweight-charts@4.2.1/dist/lightweight-charts.standalone.production.js"></script>
+
+<style>
+:root{
+  --bg:#0b1220; --card:#141c2e; --panel:#0f1830;
+  --border:#263453; --text:#e6edf7; --muted:#9fb0d0;
+  --primary:#2a62ff; --ok:#22c55e; --err:#ef4444; --warn:#eab308;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial}
+header{position:sticky;top:0;z-index:10;background:#0d1628;border-bottom:1px solid var(--border);padding:12px 16px;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:12px}
+.brand{font-weight:800;letter-spacing:.5px}
+.center{justify-self:center;color:#cfe8ff;font-size:12px;display:flex;gap:8px;align-items:center}
+.center i{width:8px;height:8px;border-radius:50%;background:#22c55e;box-shadow:0 0 6px #22c55e}
+.right{justify-self:end;display:flex;gap:8px}
+button,select,input{padding:10px 12px;border-radius:10px;border:1px solid var(--border);background:var(--panel);color:var(--text)}
+button.primary{background:var(--primary);border-color:var(--primary);color:#fff}
+button.danger{background:#9b2226;border-color:#9b2226;color:#fff}
+main{max-width:1200px;margin:14px auto 90px;padding:0 12px;display:grid;gap:14px}
+@media(min-width:980px){main{grid-template-columns:1.05fr 1fr}}
+.card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.kpi{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}
+.pill{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:10px 12px;min-width:160px}
+.pill b{display:block;color:#cfe8ff;font-size:12px;margin-bottom:6px}
+.kv{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.chart-wrap{height:380px;border-radius:12px;overflow:hidden;background:#0a1428;border:1px solid #1f2b45}
+.toolbar{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}
+.grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+.log{max-height:240px;overflow:auto;background:#08101b;border-radius:10px;border:1px solid #223052;padding:10px;font-family:ui-monospace,Menlo,Consolas}
+.history-headers,.history-row{display:flex;gap:10px;align-items:center;padding:6px 8px}
+.history-headers{border-bottom:1px solid rgba(255,255,255,.06);font-weight:700}
+.h-time{width:74px}.h-type{width:94px}.h-sym{width:140px}.h-price{width:86px;text-align:right}.h-pl{width:96px;text-align:right}
+.badge{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:999px;border:1px solid var(--border);background:#0b1524;font-size:12px}
+.badge.ok{color:#22c55e;border-color:#1b7c3f} .badge.err{color:#ef4444;border-color:#7a2b2b}
+.small{font-size:12px;color:var(--muted)}
+/* Probabilidades */
+.ai{display:grid;gap:10px}
+.ai .tool{background:#0b1524;border:1px solid #223052;border-radius:12px;padding:12px}
+.ai .kpi{display:grid;gap:10px}
+.ai .row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+.barwrap{position:relative;height:12px}
+.barwrap .bar{position:absolute;inset:0;background:#08101b;border:1px solid #1f2b45;border-radius:999px;overflow:hidden}
+.barwrap .bar i{display:block;height:100%;width:0%;transition:width .35s ease}
+.ai .pct{text-align:right;font-weight:700}
+.ai .hot{color:#22c55e;font-weight:800}
+.ai .cold{color:#ef4444;font-weight:800}
+footer{position:fixed;left:0;right:0;bottom:0;padding:10px;background:#0d1628;border-top:1px solid var(--border)}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">POINT — Multipliers</div>
+  <div class="center"><i></i> <span id="online_count">—</span> online</div>
+  <div class="right">
+    <button id="btn_connect" class="primary">Autorizar & Conectar</button>
+    <button id="btn_disconnect" class="danger">Desconectar</button>
+  </div>
+</header>
+
+<main>
+  <!-- ESQUERDA -->
+  <section class="card">
+    <h3 style="margin:0 0 8px">Conexão & Mercado</h3>
+    <div class="row">
+      <div>
+        <label>Conta</label>
+        <select id="account_select" disabled></select>
+      </div>
+      <div>
+        <label>Moeda</label>
+        <select id="currency">
+          <option value="USD" selected>USD</option>
+          <option value="EUR">EUR</option>
+          <option value="GBP">GBP</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="row" style="margin-top:10px">
+      <div>
+        <label>Símbolo (*multipliers*)</label>
+        <select id="symbol"></select>
+      </div>
+      <div>
+        <label>Timeframe da vela</label>
+        <select id="tf">
+          <option value="1">1s</option>
+          <option value="5" selected>5s</option>
+          <option value="10">10s</option>
+          <option value="60">1m</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="kpi">
+      <div class="pill"><b>Tipo</b><span id="account_info">—</span></div>
+      <div class="pill"><b>Saldo</b><span id="balance">—</span></div>
+      <div class="pill"><b>P/L Sessão</b><span id="pl_session">$0.00</span></div>
+      <div class="pill"><b>Posição</b><span id="pos_state">—</span></div>
+    </div>
+
+    <div class="toolbar">
+      <div class="badge" id="net_state">Offline</div>
+      <div class="badge ok" id="tick_badge" style="display:none">Ticks OK</div>
+      <div class="badge err" id="tick_badge_err" style="display:none">Sem Ticks</div>
+      <span class="small">Último preço: <b id="last_price">—</b></span>
+    </div>
+
+    <div class="chart-wrap" id="chart"></div>
+
+    <div class="toolbar">
+      <label>Stake</label><input id="stake" type="number" step="0.01" value="1.00" style="width:120px">
+      <label>TP</label><input id="tp" type="number" step="0.01" placeholder="opcional" style="width:120px">
+      <label>SL</label><input id="sl" type="number" step="0.01" placeholder="opcional" style="width:120px">
+      <label>Perfil</label>
+      <select id="risk_profile" style="width:160px">
+        <option value="conservative" selected>Conservador</option>
+        <option value="moderate">Moderado</option>
+        <option value="aggressive">Agressivo</option>
+      </select>
+      <label>Multiplicador</label>
+      <select id="multiplier" style="width:120px">
+        <!-- será preenchido com sugestões + suportados -->
+      </select>
+      <button id="btn_up" class="primary">UP (MULTUP)</button>
+      <button id="btn_down" class="danger">DOWN (MULTDOWN)</button>
+      <button id="btn_close">Fechar Posição</button>
+    </div>
+  </section>
+
+  <!-- DIREITA -->
+  <section class="card">
+    <h3 style="margin:0 0 8px">Probabilidades & Histórico</h3>
+
+    <div class="ai">
+      <div class="tool">
+        <h4 style="margin:0 0 8px">Dígitos Par/Ímpar</h4>
+        <div class="row">
+          <div>
+            <div class="small">Par</div>
+            <div class="barwrap"><div class="bar"><i id="bar_even"></i></div></div>
+          </div>
+          <div>
+            <div class="small">Ímpar</div>
+            <div class="barwrap"><div class="bar"><i id="bar_odd"></i></div></div>
+          </div>
+          <div class="kv">
+            <div><b id="p_even">—</b></div>
+            <div><b id="p_odd">—</b></div>
+          </div>
+        </div>
+        <div class="small">Sugestão: <span id="par_sugg" class="hot">—</span></div>
+      </div>
+
+      <div class="tool">
+        <h4 style="margin:0 0 8px">Momentum (tendência curta)</h4>
+        <div class="row">
+          <div><span class="small">Up prob.</span><div class="barwrap"><div class="bar"><i id="bar_up"></i></div></div></div>
+          <div><span class="small">Down prob.</span><div class="barwrap"><div class="bar"><i id="bar_dn"></i></div></div></div>
+          <div class="kv">
+            <div><b id="p_up">—</b></div>
+            <div><b id="p_dn">—</b></div>
+          </div>
+        </div>
+        <div class="small">Leitura: <b id="mom_text">—</b></div>
+      </div>
+
+      <div class="tool">
+        <h4 style="margin:0 0 8px">Sugestões de Multiplicador</h4>
+        <div class="small">Com base no perfil e saldo: <b id="mult_hint">—</b></div>
+      </div>
+    </div>
+
+    <div style="margin-top:10px">
+      <div class="history-headers">
+        <span class="h-time">Hora</span>
+        <span class="h-type">Tipo</span>
+        <span class="h-sym">Símbolo</span>
+        <span class="h-price">Stake</span>
+        <span class="h-pl">P/L</span>
+      </div>
+      <div id="log" class="log"></div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <span class="small">Deriv Multipliers envolvem alto risco. Nunca opere com capital que não pode perder.</span>
+</footer>
+
+<script>
+/* ========= Utilidades ========= */
+const $=id=>document.getElementById(id);
+const fmt2 = n => (Number.isFinite(+n) ? (+n).toFixed(2) : n);
+const now  = () => new Date().toLocaleTimeString();
+function fileLog(type,sym,stake,pl){
+  const r=document.createElement('div'); r.className='history-row';
+  r.innerHTML = `
+    <span class="h-time">${now()}</span>
+    <span class="h-type">${type}</span>
+    <span class="h-sym">${sym}</span>
+    <span class="h-price">$${fmt2(stake)}</span>
+    <span class="h-pl" style="color:${pl>=0?'#22c55e':'#ef4444'}">${fmt2(pl)}</span>
+  `;
+  $('log').prepend(r);
+}
+
+/* ========= Estado Global ========= */
+const APP_ID     = '98640';
+const OAUTH_SCOPE= 'read trade';
+const REDIRECT_URI = window.location.origin + window.location.pathname;
+
+let ws=null, authorized=false;
+let account_info={loginid:'',is_virtual:null,currency:'USD'};
+let open_position=null;         // { contract_id, buy_price, currency }
+let pending_proposal=null;      // { context:'buy', params, dir }
+let session_pl=0;
+let last_price=null;
+
+let lastTickAt=0, lastPOCAt=0, reconnectTry=0, reconnectTmr=null;
+const LOCK_TIMEOUT_MS=8000; let order_lock=false, lock_timer=null;
+
+/* ========= Prob Engine ========= */
+const Prob = (()=> {
+  const N=1200;
+  const st={digits:[],counts:new Array(10).fill(0),even:0,odd:0,lastPrice:null,ups:0,downs:0,emaF:null,emaS:null,
+            last:{even:.5,odd:.5,up:.5,dn:.5}};
+  const ema=(prev,x,len)=> prev==null?x:(prev + (2/(len+1))*(x-prev));
+  const beta=(a,b)=> a/(a+b);
+  function lastDigit(p){
+    const s = Number(p).toFixed(4); // 4 casas é suficiente p/ voláteis
+    const ds = s.replace(/\D/g,''); return ds.length?parseInt(ds.at(-1),10):0;
+  }
+  function pct(x){ return (x*100).toFixed(2)+'%'; }
+  function step(price){
+    // tendência / ups-downs
+    if(st.lastPrice!=null){ (price>st.lastPrice)?st.ups++:st.downs++; }
+    st.lastPrice=price;
+    st.emaF = ema(st.emaF, price, 20);
+    st.emaS = ema(st.emaS, price, 60);
+    // dígitos
+    const d=lastDigit(price);
+    st.digits.push(d); st.counts[d]++; (d%2===0?st.even++:st.odd++);
+    if(st.digits.length>N){ const old=st.digits.shift(); st.counts[old]--; (old%2===0?st.even--:st.odd--); }
+    // UI
+    const pEven=beta(.5+st.even,.5+st.odd), pOdd=1-pEven;
+    $('bar_even').style.width=(pEven*100)+'%'; $('bar_odd').style.width=(pOdd*100)+'%';
+    $('p_even').textContent=pct(pEven); $('p_odd').textContent=pct(pOdd);
+    const tilt = pEven-pOdd;
+    const s = Math.abs(tilt)>=.02 ? (tilt>0?'Par':'Ímpar'):'—';
+    const el=$('par_sugg'); el.textContent=s; el.classList.toggle('hot',tilt>0.06); el.classList.toggle('cold',tilt<-0.06);
+
+    let pUp=beta(.5+st.ups,.5+st.downs);
+    const momUp = (st.emaF!=null && st.emaS!=null && st.emaF>st.emaS);
+    pUp = Math.max(0,Math.min(1,pUp + (momUp?+0.05:-0.05)));
+    const pDn = 1-pUp;
+    $('bar_up').style.width=(pUp*100)+'%'; $('bar_dn').style.width=(pDn*100)+'%';
+    $('p_up').textContent=pct(pUp); $('p_dn').textContent=pct(pDn);
+    $('mom_text').textContent = momUp ? 'EMAs favorecem alta' : 'EMAs favorecem queda';
+  }
+  function reset(){ st.digits.length=0; st.counts.fill(0); st.even=st.odd=0; st.ups=st.downs=0; st.lastPrice=null; st.emaF=null; st.emaS=null; }
+  return {step, reset};
+})();
+
+/* ========= Chart (candles) ========= */
+let chart, series, CANDLE_SEC=5;
+let candle = null;           // candle corrente em construção
+const MAX_BARS = 600;
+function initChart(){
+  $('chart').innerHTML='';
+  chart = LightweightCharts.createChart($('chart'),{
+    layout:{background:{type:LiteweightBg(), color:'#0a1428'},textColor:'#cfe8ff'},
+    rightPriceScale:{borderColor:'#1f2b45'},
+    timeScale:{borderColor:'#1f2b45', timeVisible:true, secondsVisible:true},
+    grid:{vertLines:{color:'#13203a'}, horzLines:{color:'#13203a'}}
+  });
+  series = chart.addCandlestickSeries({
+    upColor:'#26a69a', downColor:'#ef5350', borderVisible:false, wickUpColor:'#26a69a', wickDownColor:'#ef5350'
+  });
+}
+function LiteweightBg(){ return LightweightCharts.ColorType.Solid; } // helper no-op (compat)
+
+function onTickToCandle(price, epochMs){
+  const tSec = Math.floor(epochMs/1000);
+  const bucket = Math.floor(tSec / CANDLE_SEC) * CANDLE_SEC;
+  if(!candle || candle.time !== bucket){
+    // push candle anterior
+    if(candle){ series.update(candle); }
+    // cria nova
+    candle = { time: bucket, open: price, high: price, low: price, close: price };
+    series.update(candle);
+    // limitar barras (pruning leve)
+    // (Liteweight lida bem, mas cortamos para manter leve)
+  }else{
+    candle.high = Math.max(candle.high, price);
+    candle.low  = Math.min(candle.low,  price);
+    candle.close= price;
+    series.update(candle);
+  }
+}
+
+/* ========= OAuth ========= */
+function beginOAuth(){
+  const url = `https://oauth.deriv.com/oauth2/authorize?app_id=${APP_ID}` +
+              `&scope=${encodeURIComponent(OAUTH_SCOPE)}` +
+              `&redirect_uri=${encodeURIComponent(REDIRECT_URI)}`;
+  window.location.href = url;
+}
+// tokens no URL ou cache
+function parseOAuthTokens(){
+  const h=new URLSearchParams(location.hash.slice(1));
+  const s=new URLSearchParams(location.search);
+  s.forEach((v,k)=>{ if(!h.get(k)) h.set(k,v); });
+  const out=[];
+  const push=(tk,ac,cur)=>{ if(tk&&ac) out.push({token:tk,loginid:ac,currency:cur||'USD',is_virtual:/VRTC/.test(ac)}); };
+  if(h.get('token')||h.get('acct')) push(h.get('token'),h.get('acct'),h.get('cur'));
+  for(let i=1;i<=20;i++) push(h.get('token'+i),h.get('acct'+i),h.get('cur'+i));
+  if(out.length){ localStorage.setItem('point_oauth',JSON.stringify(out)); history.replaceState({},document.title,REDIRECT_URI); }
+  if(!out.length){ try{ const cached=JSON.parse(localStorage.getItem('point_oauth')||'[]'); if(Array.isArray(cached)) return cached; }catch{} }
+  return out;
+}
+function populateAccounts(){
+  const list=parseOAuthTokens(), sel=$('account_select'); sel.innerHTML='';
+  if(list.length===0){ sel.disabled=true; return; }
+  list.forEach((a,i)=>{ const o=document.createElement('option'); o.value=String(i); o.textContent=`${a.loginid} • ${a.is_virtual?'DEMO':'REAL'} ${a.currency}`; sel.appendChild(o); });
+  sel.disabled=false;
+}
+function selectedAccount(){ const list=parseOAuthTokens(); const idx=parseInt(($('account_select').value||'0'),10); return list[idx]||null; }
+
+/* ========= WS / API ========= */
+function wsSend(o){ if(ws && ws.readyState===1) ws.send(JSON.stringify(o)); }
+function armLock(){ order_lock=true; if(lock_timer) clearTimeout(lock_timer); lock_timer=setTimeout(()=>{ order_lock=false; pending_proposal=null; }, LOCK_TIMEOUT_MS); }
+function releaseLock(){ order_lock=false; if(lock_timer){ clearTimeout(lock_timer); lock_timer=null; } }
+
+function scheduleReconnect(){
+  if(reconnectTmr) return;
+  const delay=Math.min(30000, (1<<Math.min(reconnectTry,5))*1000);
+  reconnectTmr=setTimeout(()=>{ reconnectTmr=null; reconnectTry++; if(parseOAuthTokens().length) connectWS(); }, delay);
+}
+
+function connectWS(){
+  const acc=selectedAccount(); if(!acc){ beginOAuth(); return; }
+  if(ws){ try{ ws.close(); }catch(e){} }
+  ws=new WebSocket(`wss://ws.derivws.com/websockets/v3?app_id=${APP_ID}`);
+  ws.onopen = ()=> wsSend({ authorize: acc.token });
+  ws.onclose= ()=>{ authorized=false; $('net_state').textContent='Offline'; $('net_state').classList.remove('ok'); scheduleReconnect(); };
+  ws.onerror= ()=>{ try{ ws.close(); }catch(e){} };
+
+  ws.onmessage=(m)=>{
+    const data = JSON.parse(m.data);
+
+    if(data.error){
+      console.warn(data.error);
+      releaseLock(); pending_proposal=null;
+      return;
+    }
+
+    switch(data.msg_type){
+      case 'authorize':
+        authorized=true; reconnectTry=0; lastTickAt=Date.now(); lastPOCAt=Date.now();
+        account_info={
+          loginid:data.authorize.loginid,
+          is_virtual:data.authorize.is_virtual,
+          currency:data.authorize.currency||'USD'
+        };
+        $('account_info').textContent = account_info.is_virtual?'Conta DEMO':'Conta REAL';
+        $('balance').textContent = '—';
+        $('net_state').textContent='Conectado'; $('net_state').classList.add('ok');
+        wsSend({balance:1, subscribe:1});
+        // carrega todos os símbolos de MULTIPLIERS
+        wsSend({ active_symbols:'full', product_type: 'multipliers' });
+        initChart();
+        subscribeTicks($('symbol').value); // caso já tenha sido preenchido
+        break;
+
+      case 'balance':
+        $('balance').textContent = `${fmt2(data.balance.balance)} ${data.balance.currency}`;
+        maybeUpdateHints();
+        break;
+
+      case 'active_symbols': {
+        const sel=$('symbol'); const prev=sel.value;
+        sel.innerHTML='';
+        (data.active_symbols||[]).forEach(s=>{
+          // filtra somente símbolos ativos negociáveis
+          if(s.exchange_is_open!==false){
+            const opt=document.createElement('option');
+            opt.value=s.symbol; opt.textContent=s.display_name;
+            sel.appendChild(opt);
+          }
+        });
+        // mantém seleção se possível
+        if([...sel.options].some(o=>o.value===prev)) sel.value=prev;
+        // assina o símbolo atual
+        if(sel.value) subscribeTicks(sel.value);
+        // popular multiplicadores sugeridos (fallback comum da Deriv)
+        populateDefaultMultipliers();
+        break;
+      }
+
+      case 'tick':
+        lastTickAt = Date.now();
+        const price = Number(data.tick.quote);
+        last_price = price;
+        $('last_price').textContent = price;
+        $('tick_badge').style.display='inline-flex';
+        $('tick_badge_err').style.display='none';
+        // Prob + Candle
+        Prob.step(price);
+        onTickToCandle(price, data.tick.epoch*1000);
+        break;
+
+      case 'proposal':
+        if(pending_proposal && data.proposal && pending_proposal.context==='buy'){
+          const p=data.proposal;
+          wsSend({ buy: p.id, price: p.ask_price });
+          // *não* limpa lock aqui; só no buy
+        }
+        break;
+
+      case 'buy':
+        open_position = { contract_id:data.buy.contract_id, buy_price:parseFloat(data.buy.buy_price||0), currency:data.buy.currency||account_info.currency };
+        $('pos_state').textContent = `Aberta #${open_position.contract_id}`;
+        fileLog('ABERTA', $('symbol').value, $('stake').value, 0);
+        wsSend({ proposal_open_contract:1, contract_id:open_position.contract_id, subscribe:1 });
+        releaseLock(); // agora podemos considerar a ordem “em curso”
+        break;
+
+      case 'proposal_open_contract':
+        lastPOCAt = Date.now();
+        const poc = data.proposal_open_contract;
+        if(!poc) return;
+        if(!poc.is_sold){
+          // P/L flutuante (mostra na pill)
+          const fl = parseFloat(poc.profit || 0);
+          $('pl_session').textContent = '$' + fmt2(session_pl + fl);
+          $('pl_session').style.color = (session_pl + fl)>=0 ? '#22c55e' : '#ef4444';
+          return;
+        }
+        // vendido: consolidar P/L
+        const pl = parseFloat(poc.profit || 0);
+        session_pl += pl;
+        $('pl_session').textContent = '$' + fmt2(session_pl);
+        $('pl_session').style.color = session_pl>=0 ? '#22c55e' : '#ef4444';
+        fileLog('FECHADA', poc.underlying || $('symbol').value, $('stake').value, pl);
+        open_position=null; pending_proposal=null;
+        $('pos_state').textContent = '—';
+        break;
+
+      case 'sell':
+        // resposta ao fechar posição manual
+        break;
+    }
+  };
+}
+
+function populateDefaultMultipliers(){
+  // listas “frequentes” — a corretora devolve suportados no proposal (reject se inválido)
+  const profiles = {
+    conservative:[20,25,30],
+    moderate:[30,40,50],
+    aggressive:[50,75,100,150,200]
+  };
+  const prof = $('risk_profile').value;
+  const list = profiles[prof] || [30,50,100];
+  const sel = $('multiplier'); sel.innerHTML='';
+  list.forEach(v=>{ const o=document.createElement('option'); o.value=String(v); o.textContent=v+'x'; sel.appendChild(o); });
+}
+function maybeUpdateHints(){
+  // sugestão simples baseada no saldo
+  const balTxt=$('balance').textContent.split(' ')[0].replace(/[^\d.\-]/g,'');
+  const bal=parseFloat(balTxt||'0');
+  const prof=$('risk_profile').value;
+  let hint='';
+  if(bal<=10) hint='Banca muito baixa → prefira 20–30x e stake ≤ $1';
+  else if(bal<=50) hint='Sug.: 25–40x com stake entre $1–$3';
+  else if(bal<=200) hint='Sug.: 40–75x com stake $2–$5';
+  else hint='Sug.: 50–100x (moderar stake)';
+  if(prof==='conservative') hint='Perfil conservador → 20–30x, SL curto';
+  if(prof==='aggressive')   hint='Perfil agressivo → 75–200x (maior risco)';
+  $('mult_hint').textContent=hint;
+}
+
+/* ========= Subscrições ========= */
+function subscribeTicks(symbol){
+  if(!authorized || !symbol) return;
+  try{ wsSend({ forget_all:'ticks' }); }catch(e){}
+  Prob.reset(); last_price=null; candle=null;
+  wsSend({ ticks: symbol, subscribe:1 });
+}
+
+/* ========= Trading (Multipliers) ========= */
+function proposeAndBuy(dir){ // dir: 'MULTUP' | 'MULTDOWN'
+  if(!authorized){ alert('Conecte primeiro.'); return; }
+  if(order_lock || pending_proposal || (open_position && !open_position.is_sold)){ return; }
+
+  const symbol=$('symbol').value, currency=$('currency').value;
+  const amount=parseFloat($('stake').value)||1;
+  const multiplier=parseInt($('multiplier').value||'50',10);
+
+  const p={
+    proposal:1, symbol, contract_type: dir,
+    amount, basis:'stake', currency,
+    multiplier
+  };
+
+  const tp = parseFloat($('tp').value);
+  const sl = parseFloat($('sl').value);
+  if(Number.isFinite(tp) && tp>0) p.take_profit = tp;   // a API aceita valores monetários
+  if(Number.isFinite(sl) && sl>0) p.stop_loss   = sl;
+
+  pending_proposal = { context:'buy', params:p, dir };
+  armLock();
+  wsSend(p);
+}
+function closePosition(){
+  if(!open_position) return;
+  wsSend({ sell: open_position.contract_id, price: 0 }); // market close
+}
+
+/* ========= Watchdog ========= */
+if(!window._pointWatchdog){
+  window._pointWatchdog=true;
+  setInterval(()=>{
+    const now = Date.now();
+    // ticks “mortos”
+    if(authorized){
+      if((now-lastTickAt)>7000){
+        $('tick_badge').style.display='none';
+        $('tick_badge_err').style.display='inline-flex';
+        if($('symbol').value) subscribeTicks($('symbol').value);
+        lastTickAt=now;
+      }
+      if(open_position && (now-lastPOCAt)>10000){
+        try{ wsSend({proposal_open_contract:1, contract_id:open_position.contract_id, subscribe:1}); }catch(e){}
+        lastPOCAt=now;
+      }
+    }
+    // socket caiu?
+    if(!ws || ws.readyState!==1) scheduleReconnect();
+  }, 2000);
+}
+
+/* ========= UI Bindings ========= */
+$('btn_connect').onclick = connectWS;
+$('btn_disconnect').onclick = ()=>{
+  try{ if(ws) ws.close(); }catch(e){}
+  const url=new URL(location.href); url.search=''; url.hash=''; location.replace(url.toString());
+};
+$('account_select').addEventListener('change', ()=> connectWS());
+$('symbol').addEventListener('change', e=> subscribeTicks(e.target.value));
+$('tf').addEventListener('change', e=>{ CANDLE_SEC=parseInt(e.target.value,10)||5; candle=null; });
+$('risk_profile').addEventListener('change', ()=>{ populateDefaultMultipliers(); maybeUpdateHints(); });
+
+$('btn_up').onclick   = ()=> proposeAndBuy('MULTUP');
+$('btn_down').onclick = ()=> proposeAndBuy('MULTDOWN');
+$('btn_close').onclick= closePosition;
+
+/* ========= Boot ========= */
+(function boot(){
+  // onlines fake (apenas cosmético)
+  const bump=()=>$('online_count').textContent= String(Math.floor(120+Math.random()*580));
+  bump(); setInterval(bump,12000);
+
+  populateAccounts();
+  initChart();
+
+  // auto connect se houver token no cache
+  if(parseOAuthTokens().length>0){ connectWS(); }
+})();
+</script>
+</body>
+</html>
