@@ -1,610 +1,473 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="pt">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>POINT — Multipliers</title>
-
-<!-- Chart.js + plugin de Candlestick -->
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/chartjs-chart-financial@3.3.0"></script>
-
-<style>
-:root{
-  --bg:#0b1220; --card:#101a2f; --panel:#0e1730; --border:#223152;
-  --muted:#9fb0d0; --accent:#2a62ff; --ok:#22c55e; --err:#ef4444;
-  --warn:#f59e0b; --ink:#e6edf7;
-}
-*{box-sizing:border-box}
-html,body{height:100%}
-body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial}
-h1,h2,h3,h4{margin:0 0 6px}
-small.muted{color:var(--muted)}
-.container{max-width:1200px;margin:0 auto;padding:14px}
-
-header{
-  position:sticky;top:0;z-index:5;
-  background:#0e1730;border-bottom:1px solid var(--border);
-}
-.header-inner{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:10px;padding:10px 14px}
-.brand{font-weight:800;letter-spacing:.5px}
-.online{justify-self:center;font-size:12px;color:#cfe8ff;display:flex;gap:6px;align-items:center}
-.online i{width:8px;height:8px;border-radius:50%;background:var(--ok);box-shadow:0 0 6px var(--ok)}
-.actions{justify-self:end;display:flex;gap:8px;flex-wrap:wrap}
-button,select,input{border:1px solid var(--border);background:var(--panel);color:var(--ink);border-radius:10px;padding:10px 12px}
-button{cursor:pointer}
-.primary{background:var(--accent);border-color:var(--accent)}
-.danger{background:#9b2226;border-color:#9b2226}
-.btn{padding:10px 14px;border-radius:12px}
-.grid{display:grid;grid-template-columns:1.05fr .95fr;gap:12px;margin-top:12px}
-@media (max-width:980px){.grid{grid-template-columns:1fr}}
-.card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:12px}
-.row{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
-@media (max-width:980px){.row{grid-template-columns:repeat(2,1fr)}}
-.pill{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:10px}
-.pill b{display:block;font-size:12px;color:var(--muted);margin-bottom:4px}
-
-.flex{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
-.badge{display:inline-block;border-radius:999px;padding:6px 10px;font-size:12px}
-.badge.ok{background:#0f2a1a;color:#a7f3d0;border:1px solid #14532d}
-.badge.err{background:#2a0f12;color:#fecaca;border:1px solid #7f1d1d}
-.badge.warn{background:#2a230f;color:#fde68a;border:1px solid #854d0e}
-
-.section-title{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px}
-
-#chart_wrap{background:#0b1526;border:1px solid #1c2b4b;border-radius:12px;overflow:hidden}
-#candle{display:block;width:100%;height:420px}
-
-.order-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
-@media (max-width:980px){.order-grid{grid-template-columns:repeat(2,1fr)}}
-.order-grid .col-span-2{grid-column:span 2}
-.order-grid .col-span-3{grid-column:span 3}
-.order-grid label{font-size:12px;color:var(--muted);display:block;margin-bottom:4px}
-
-.buy-sell{display:flex;gap:10px;margin-top:8px}
-.btn-up{background:#17642f;border-color:#17642f}
-.btn-dn{background:#7a1b1b;border-color:#7a1b1b}
-
-.progress{height:12px;background:#0b1526;border:1px solid #1f2b45;border-radius:999px;overflow:hidden}
-.progress i{display:block;height:100%;width:0%;transition:width .35s ease}
-.progress.up i{background:linear-gradient(90deg,#22c55e,#16a34a)}
-.progress.dn i{background:linear-gradient(90deg,#ef4444,#b91c1c)}
-
-.table{width:100%;border-collapse:collapse;font-size:14px}
-.table th,.table td{border-bottom:1px solid rgba(255,255,255,.06);padding:8px}
-.table th{text-align:left;color:#cfe8ff;font-weight:600;font-size:12px}
-.table td .chip{display:inline-block;border-radius:999px;padding:4px 8px;border:1px solid #1f2b45;background:#0b1526}
-
-.small{font-size:12px}
-.right{float:right}
-</style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>POINT — Multipliers (Deriv)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    :root{
+      --bg:#0b1220;--card:#121a2b;--muted:#9fb0d0;--ok:#22c55e;--warn:#eab308;--err:#ef4444;--ink:#e6edf7;--soft:#1b2740
+    }
+    body{background:var(--bg);color:var(--ink)}
+    .card{background:var(--card);border:1px solid #1e2a46}
+    .pill{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.08)}
+    .btn{transition:transform .05s ease}
+    .btn:active{transform:translateY(1px)}
+    .glass{backdrop-filter: blur(8px); background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06)}
+    .grid-col{display:grid;grid-template-columns:1fr 1fr;gap:.75rem}
+    @media (min-width:1024px){.grid-col-3{grid-template-columns:repeat(3,1fr)}}
+  </style>
 </head>
 <body>
-<header>
-  <div class="header-inner container">
-    <div class="brand">POINT — <span style="color:#84aef8">Multipliers</span></div>
-    <div class="online"><i></i><span id="online_count">—</span> online</div>
-    <div class="actions">
-      <button id="btn_connect" class="btn primary">Autorizar & Conectar</button>
-      <button id="btn_disconnect" class="btn danger">Desconectar</button>
+  <header class="sticky top-0 z-50 border-b border-slate-800 bg-[color:var(--soft)]">
+    <div class="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 rounded-xl bg-indigo-500/20 flex items-center justify-center">
+          <span class="text-indigo-300 font-bold">P</span>
+        </div>
+        <div>
+          <h1 class="text-lg font-semibold tracking-wide">POINT — Multipliers (Deriv)</h1>
+          <p class="text-xs text-slate-400">App ID: 98640 • OAuth + WebSocket</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-2">
+        <button id="loginBtn" class="btn px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm">Conectar</button>
+        <button id="logoutBtn" class="btn px-3 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-slate-100 text-sm hidden">Desconectar</button>
+      </div>
     </div>
-  </div>
-</header>
+  </header>
 
-<div class="container">
-  <div class="grid">
-    <!-- COLUNA ESQUERDA -->
-    <section class="card">
-      <div class="section-title"><h3>Conexão & Mercado</h3></div>
-
-      <div class="row">
-        <div>
-          <label>Conta</label>
-          <select id="account_select"></select>
-        </div>
-        <div>
-          <label>Moeda</label>
-          <select id="currency">
-            <option value="USD" selected>USD</option>
-            <option value="EUR">EUR</option>
-            <option value="GBP">GBP</option>
-          </select>
-        </div>
-        <div>
-          <label>Símbolo (*multipliers*)</label>
-          <select id="symbol"></select>
-        </div>
-        <div>
-          <label>Timeframe da vela</label>
-          <select id="gran">
-            <option value="1">1s</option>
-            <option value="5">5s</option>
-            <option value="60" selected>1m</option>
-          </select>
-        </div>
-      </div>
-
-      <div class="row" style="margin-top:8px">
-        <div class="pill"><b>Tipo</b><div id="acc_type">—</div></div>
-        <div class="pill"><b>Saldo</b><div id="balance">—</div></div>
-        <div class="pill"><b>P/L Sessão</b><div id="pl_session">0.00</div></div>
-        <div class="pill"><b>Último preço</b><div id="last_price">—</div></div>
-      </div>
-
-      <div class="row" style="margin-top:8px">
-        <div class="pill"><b>Posição</b><div id="position_hint">—</div></div>
-        <div class="pill"><b>Status</b>
-          <div class="flex">
-            <span id="st_conn" class="badge err">Offline</span>
-            <span id="st_ticks" class="badge warn">Sem Ticks</span>
+  <main class="max-w-6xl mx-auto px-4 py-6 space-y-6">
+    <!-- STATUS / CONTAS -->
+    <section class="card rounded-2xl p-4">
+      <div class="flex flex-wrap items-center gap-3 justify-between">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-2xl bg-emerald-500/15 flex items-center justify-center">
+            <span class="text-emerald-300">●</span>
           </div>
-        </div>
-        <div class="pill col-span-2">
-          <b>Gráfico</b>
-          <div id="chart_wrap"><canvas id="candle"></canvas></div>
-          <div class="small muted" id="candle_hint" style="margin-top:6px"></div>
-        </div>
-      </div>
-
-      <div class="row" style="margin-top:10px">
-        <div class="card" style="grid-column:1 / -1">
-          <h4 style="margin-bottom:6px">Probabilidade (momentum curto)</h4>
-          <div class="small muted" id="prob_reading">Leitura: —</div>
-          <div class="row" style="margin-top:10px">
-            <div>
-              <div class="small muted">Prob. UP</div>
-              <div class="progress up"><i id="bar_up" style="width:0%"></i></div>
-              <div class="small" id="pct_up">—</div>
-            </div>
-            <div>
-              <div class="small muted">Prob. DOWN</div>
-              <div class="progress dn"><i id="bar_dn" style="width:0%"></i></div>
-              <div class="small" id="pct_dn">—</div>
+          <div>
+            <div id="connStatus" class="text-sm text-slate-300">Desconectado</div>
+            <div id="loginNote" class="text-xs text-slate-400">
+              Clique em <b>Conectar</b> para iniciar o OAuth (será redirecionado e voltará com os tokens).
             </div>
           </div>
         </div>
+        <div class="flex items-center gap-3">
+          <label class="text-sm text-slate-300">Conta:</label>
+          <select id="accountSelect" class="pill px-3 py-2 rounded-xl text-sm text-slate-200 bg-transparent" disabled></select>
+          <button id="useAccountBtn" class="btn px-3 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-sm disabled:opacity-50" disabled>Usar conta</button>
+        </div>
       </div>
+    </section>
 
-      <div class="row" style="margin-top:10px">
-        <div class="card" style="grid-column:1 / -1">
-          <h4 style="margin-bottom:8px">Ordem Multiplier</h4>
-          <div class="order-grid">
+    <!-- CONTROLES DE MERCADO -->
+    <section class="card rounded-2xl p-4">
+      <div class="grid gap-4 lg:grid-cols-3">
+        <div class="space-y-3">
+          <div class="text-xs uppercase tracking-wide text-slate-400">Mercado</div>
+          <div class="space-y-2">
+            <label class="text-sm text-slate-300">Símbolo (Volatility/Synthetic)</label>
+            <select id="symbolSelect" class="pill w-full px-3 py-2 rounded-xl text-sm bg-transparent text-slate-200" disabled>
+              <option>— carregando —</option>
+            </select>
+          </div>
+          <div class="grid-col">
             <div>
-              <label>Stake</label>
-              <input id="stake" type="number" min="0.35" step="0.01" value="1.00">
+              <label class="text-sm text-slate-300">Stake</label>
+              <input id="stakeInput" type="number" min="1" step="1" value="5" class="pill w-full px-3 py-2 rounded-xl bg-transparent text-slate-200" disabled />
             </div>
             <div>
-              <label>Perfil</label>
-              <select id="profile">
-                <option value="cons">Conservador (x100–x400, SL curto)</option>
-                <option value="mod">Moderado (x400–x800, SL médio)</option>
-                <option value="agr">Agressivo (x800–x3200, SL+)</option>
-              </select>
-            </div>
-            <div>
-              <label>Multiplicador</label>
-              <select id="mult">
-                <option value="">— auto pelo perfil —</option>
-                <option value="100">x100</option>
+              <label class="text-sm text-slate-300">Multiplier</label>
+              <select id="multInput" class="pill w-full px-3 py-2 rounded-xl bg-transparent text-slate-200" disabled>
+                <option value="50">x50</option>
+                <option value="100" selected>x100</option>
+                <option value="200">x200</option>
                 <option value="400">x400</option>
                 <option value="800">x800</option>
-                <option value="1600">x1600</option>
-                <option value="3200">x3200</option>
+                <option value="1000">x1000</option>
+                <option value="1500">x1500</option>
+                <option value="2000">x2000</option>
               </select>
             </div>
+          </div>
+          <div class="grid-col">
             <div>
-              <label>TP (opcional)</label>
-              <input id="tp" type="number" step="0.01" placeholder="ex.: 5">
+              <label class="text-sm text-slate-300">Take Profit (opcional)</label>
+              <input id="tpInput" type="number" min="1" step="1" placeholder="ex: 150" class="pill w-full px-3 py-2 rounded-xl bg-transparent text-slate-200" disabled />
             </div>
             <div>
-              <label>SL (opcional)</label>
-              <input id="sl" type="number" step="0.01" placeholder="ex.: 5">
+              <label class="text-sm text-slate-300">Stop Loss (opcional)</label>
+              <input id="slInput" type="number" min="1" step="1" placeholder="ex: 130" class="pill w-full px-3 py-2 rounded-xl bg-transparent text-slate-200" disabled />
             </div>
           </div>
-          <div class="buy-sell">
-            <button id="btn_up"  class="btn btn-up">UP (MULTUP)</button>
-            <button id="btn_dn"  class="btn btn-dn">DOWN (MULTDOWN)</button>
-            <button id="btn_close_all" class="btn">Fechar Todas</button>
+          <div>
+            <label class="text-sm text-slate-300">Deal Cancellation</label>
+            <select id="dcInput" class="pill w-full px-3 py-2 rounded-xl bg-transparent text-slate-200" disabled>
+              <option value="">Desligado</option>
+              <option value="5m">5m</option>
+              <option value="10m">10m</option>
+              <option value="15m">15m</option>
+              <option value="30m">30m</option>
+              <option value="60m">60m</option>
+            </select>
           </div>
-          <div class="small muted" style="margin-top:6px">
-            TP/SL são valores em moeda. Se “Multiplicador” ficar vazio, escolhemos automaticamente conforme o Perfil.
+        </div>
+
+        <div class="space-y-3">
+          <div class="text-xs uppercase tracking-wide text-slate-400">Ação</div>
+          <div class="flex gap-3">
+            <button id="upBtn" class="btn flex-1 px-4 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-40" disabled>UP (MULTUP)</button>
+            <button id="downBtn" class="btn flex-1 px-4 py-3 rounded-xl bg-rose-600 hover:bg-rose-500 text-white disabled:opacity-40" disabled>DOWN (MULTDOWN)</button>
+          </div>
+          <div class="text-xs text-slate-400">
+            Multipliers: perdas limitadas ao <b>stake</b>; podes fechar a qualquer momento; TP/SL e Cancellation suportados. 3
+          </div>
+        </div>
+
+        <div class="space-y-3">
+          <div class="text-xs uppercase tracking-wide text-slate-400">Preço (tempo real)</div>
+          <div class="glass rounded-xl p-4">
+            <div id="tickSymbol" class="text-sm text-slate-400">—</div>
+            <div class="text-3xl font-semibold mt-1" id="tickPrice">—</div>
+            <div class="mt-3 text-xs text-slate-400" id="tickNote">Assina ticks ao escolher o símbolo.</div>
           </div>
         </div>
       </div>
     </section>
 
-    <!-- COLUNA DIREITA -->
-    <section class="card">
-      <div class="section-title">
-        <h3>Posições abertas</h3>
-        <button id="btn_refresh" class="btn">Atualizar</button>
+    <!-- POSIÇÃO ATIVA -->
+    <section class="card rounded-2xl p-4">
+      <div class="flex items-center justify-between">
+        <div>
+          <div class="text-xs uppercase tracking-wide text-slate-400">Posição</div>
+          <div id="posStatus" class="text-sm">Nenhuma posição aberta.</div>
+        </div>
+        <div class="flex items-center gap-3">
+          <div class="text-sm">P/L: <span id="plVal" class="font-semibold text-slate-200">—</span></div>
+          <button id="closeBtn" class="btn px-3 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-sm hidden">Fechar posição</button>
+        </div>
       </div>
-      <table class="table" id="pos_table">
-        <thead>
-          <tr>
-            <th>Hora</th><th>Tipo</th><th>Símbolo</th><th>Stake</th><th>Mult.</th><th>P/L</th><th>Ação</th>
-          </tr>
-        </thead>
-        <tbody id="pos_body"></tbody>
-      </table>
-      <div class="small muted right" style="margin-top:6px">Total P/L sessão: <b id="pl_total">$0.00</b></div>
     </section>
-  </div>
-</div>
+  </main>
 
-<script>
-/* ======== Util ======== */
-const $=id=>document.getElementById(id);
-const fmt = (n, d=2)=> Number(n).toFixed(d);
-const money = n => (n>=0?'+$':'-$') + fmt(Math.abs(n),2);
+  <script>
+    // ================== CONFIG ==================
+    const APP_ID = 98640; // POINT
+    const WS_URL = `wss://ws.derivws.com/websockets/v3?app_id=${APP_ID}`;
+    const OAUTH_URL = `https://oauth.deriv.com/oauth2/authorize?app_id=${APP_ID}`; // redireciona e retorna com tokens
+    // ============================================
 
-/* ======== Estado ======== */
-const APP_ID = 98640; // POINT
-const OAUTH_SCOPE = 'read trade';
-const REDIRECT_URI = location.origin + location.pathname;
+    // Estado global simples
+    let ws = null;
+    let authorized = false;
+    let selectedToken = null;
+    let loginId = null;
+    let currency = 'USD';
+    let tickSubId = null;
+    let openContractId = null;
+    let pocSubId = null;
 
-let ws=null, authorized=false;
-let account_info = { loginid:'', is_virtual:true, currency:'USD' };
-let session_pl = 0;
+    const els = {
+      loginBtn: document.getElementById('loginBtn'),
+      logoutBtn: document.getElementById('logoutBtn'),
+      connStatus: document.getElementById('connStatus'),
+      loginNote: document.getElementById('loginNote'),
+      accountSelect: document.getElementById('accountSelect'),
+      useAccountBtn: document.getElementById('useAccountBtn'),
+      symbolSelect: document.getElementById('symbolSelect'),
+      stakeInput: document.getElementById('stakeInput'),
+      multInput: document.getElementById('multInput'),
+      tpInput: document.getElementById('tpInput'),
+      slInput: document.getElementById('slInput'),
+      dcInput: document.getElementById('dcInput'),
+      upBtn: document.getElementById('upBtn'),
+      downBtn: document.getElementById('downBtn'),
+      tickSymbol: document.getElementById('tickSymbol'),
+      tickPrice: document.getElementById('tickPrice'),
+      tickNote: document.getElementById('tickNote'),
+      posStatus: document.getElementById('posStatus'),
+      plVal: document.getElementById('plVal'),
+      closeBtn: document.getElementById('closeBtn'),
+    };
 
-let chart=null;
-let candleData=[];                 // [{t:o timestamp ms, o,h,l,c}]
-let lastPrice = null;
+    // ------------- Helpers UI -------------
+    function setConnectedUI(on){
+      els.connStatus.textContent = on ? 'Conectado (WebSocket ativo)' : 'Desconectado';
+    }
+    function setAuthUI(on){
+      authorized = !!on;
+      const dis = !on;
+      [els.accountSelect, els.useAccountBtn, els.symbolSelect, els.stakeInput, els.multInput, els.tpInput, els.slInput, els.dcInput, els.upBtn, els.downBtn].forEach(el=>{
+        el.disabled = dis;
+      });
+      els.logoutBtn.classList.toggle('hidden', !on);
+      els.loginBtn.classList.toggle('hidden', on);
+      els.loginNote.textContent = on
+        ? 'Autorizado. Escolhe a conta e o símbolo para negociar.'
+        : 'Clique em Conectar para iniciar o OAuth.';
+    }
+    function toast(msg,isErr=false){
+      console[isErr?'error':'log'](msg);
+    }
 
-// Prob engine (momentum curto)
-const Prob = { up:0.5, dn:0.5, emaF:null, emaS:null, lastPrice:null };
-
-/* ======== Símbolos Multipliers ======== */
-const MULT_SYMBOLS = [
-  // Volatility 1s
-  {v:'1HZ10V',t:'Volatility 10 (1s) Index'},
-  {v:'1HZ25V',t:'Volatility 25 (1s) Index'},
-  {v:'1HZ50V',t:'Volatility 50 (1s) Index'},
-  {v:'1HZ75V',t:'Volatility 75 (1s) Index'},
-  {v:'1HZ100V',t:'Volatility 100 (1s) Index'},
-  // Volatility continuous
-  {v:'R_10',t:'Volatility 10 Index'},
-  {v:'R_25',t:'Volatility 25 Index'},
-  {v:'R_50',t:'Volatility 50 Index'},
-  {v:'R_75',t:'Volatility 75 Index'},
-  {v:'R_100',t:'Volatility 100 Index'},
-  // Crash/Boom
-  {v:'CRASH300',t:'Crash 300 Index'},
-  {v:'CRASH500',t:'Crash 500 Index'},
-  {v:'CRASH1000',t:'Crash 1000 Index'},
-  {v:'BOOM300',t:'Boom 300 Index'},
-  {v:'BOOM500',t:'Boom 500 Index'},
-  {v:'BOOM1000',t:'Boom 1000 Index'},
-];
-
-/* ======== UI Init ======== */
-(function initUI(){
-  // online fake
-  const bump=()=>$('online_count').textContent= String(200+Math.floor(Math.random()*240));
-  bump(); setInterval(bump,12000);
-
-  // preencher símbolos
-  const s=$('symbol'); MULT_SYMBOLS.forEach(x=>{
-    const o=document.createElement('option'); o.value=x.v; o.textContent=x.t; s.appendChild(o);
-  }); s.value='1HZ10V';
-
-  // chart
-  initChart();
-
-  // binds
-  $('btn_connect').onclick = connectWS;
-  $('btn_disconnect').onclick= hardDisconnect;
-  $('account_select').onchange = ()=> authorized && reconnect();
-  $('symbol').onchange = ()=> authorized && (subscribeCandles(), subscribeTicks());
-  $('gran').onchange   = ()=> authorized && subscribeCandles();
-  $('btn_up').onclick  = ()=> placeMultiplier('MULTUP');
-  $('btn_dn').onclick  = ()=> placeMultiplier('MULTDOWN');
-  $('btn_close_all').onclick = closeAll;
-  $('btn_refresh').onclick   = refreshPOs;
-
-  populateAccounts();
-  if(parseOAuthTokens().length){ connectWS(); }
-})();
-
-/* ======== Chart ======== */
-function initChart(){
-  const ctx=$('candle').getContext('2d');
-  chart = new Chart(ctx, {
-    type:'candlestick',
-    data:{datasets:[{label:'Preço', data:candleData, borderColor:'#7fb3ff', color:{up:'#22c55e',down:'#ef4444',unchanged:'#9fb0d0'}}]},
-    options:{
-      responsive:true,
-      parsing:false,
-      plugins:{legend:{display:false}},
-      scales:{
-        x:{time:{unit:'minute'}, ticks:{color:'#9fb0d0'}},
-        y:{ticks:{color:'#9fb0d0'}}
+    // ------------- OAuth: captura tokens do redirect -------------
+    // Exemplo de retorno: .../redirect/?acct1=crxxxx&token1=aaaa&cur1=usd&acct2=vrtc...&token2=bbbb&cur2=usd
+    function extractTokensFromUrl(){
+      const q = new URLSearchParams(location.search);
+      const tokens = [];
+      for (let i=1;i<=10;i++){
+        const acct = q.get(`acct${i}`), token = q.get(`token${i}`), cur = q.get(`cur${i}`);
+        if(acct && token){
+          tokens.push({account:acct.toUpperCase(), token, currency:(cur||'USD').toUpperCase()});
+        }
+      }
+      if(tokens.length){
+        localStorage.setItem('POINT_TOKENS', JSON.stringify(tokens));
+        // remove params da barra
+        history.replaceState({}, document.title, location.pathname);
       }
     }
-  });
-}
-function pushOrMergeCandle(ohlc){
-  // ohlc = {open,high,low,close,epoch}
-  const t = ohlc.epoch*1000;
-  const last = candleData.at(-1);
-  if(last && last.t===t){
-    last.o = Number(ohlc.open);
-    last.h = Number(ohlc.high);
-    last.l = Number(ohlc.low);
-    last.c = Number(ohlc.close);
-  }else{
-    candleData.push({t, o:+ohlc.open, h:+ohlc.high, l:+ohlc.low, c:+ohlc.close});
-    if(candleData.length>400) candleData.shift();
-  }
-  chart.update();
-}
+    function getStoredTokens(){
+      try { return JSON.parse(localStorage.getItem('POINT_TOKENS')||'[]'); } catch(e){ return []; }
+    }
+    function clearTokens(){
+      localStorage.removeItem('POINT_TOKENS');
+    }
 
-/* ======== Prob Engine ======== */
-function ema(prev,x,len){ return prev==null?x:(prev + (2/(len+1))*(x-prev)); }
-function onPriceForProb(p){
-  if(Prob.lastPrice!=null){
-    // simples: sobe/ desce
-    const up = p>Prob.lastPrice ? 1 : 0;
-    const dn = 1-up;
-    Prob.emaF = ema(Prob.emaF, p, 8);
-    Prob.emaS = ema(Prob.emaS, p, 21);
-    // beta-like
-    const bias = (Prob.emaF!=null && Prob.emaS!=null && Prob.emaF>Prob.emaS)? +0.06 : -0.06;
-    const kUp = 0.5 + (up?0.02:0) + (bias>0?Math.abs(bias):0);
-    const kDn = 1 - kUp;
-    Prob.up = Math.min(0.95, Math.max(0.05, (Prob.up*0.9 + kUp*0.1)));
-    Prob.dn = 1-Prob.up;
-    renderProb();
-  }
-  Prob.lastPrice = p;
-}
-function renderProb(){
-  const upP = (Prob.up*100);
-  const dnP = 100-upP;
-  $('bar_up').style.width = upP.toFixed(1)+'%';
-  $('bar_dn').style.width = dnP.toFixed(1)+'%';
-  $('pct_up').textContent = upP.toFixed(1)+'%';
-  $('pct_dn').textContent = dnP.toFixed(1)+'%';
-  $('prob_reading').textContent = 'Leitura: favorece ' + (upP>dnP?'UP (compra)':'DOWN (venda)');
-}
-
-/* ======== OAuth / Contas ======== */
-function beginOAuth(){
-  const url = `https://oauth.deriv.com/oauth2/authorize?app_id=${APP_ID}&scope=${encodeURIComponent(OAUTH_SCOPE)}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}`;
-  location.href = url;
-}
-function parseOAuthTokens(){
-  const h = new URLSearchParams(location.hash.slice(1));
-  const s = new URLSearchParams(location.search);
-  s.forEach((v,k)=>{if(!h.get(k))h.set(k,v);});
-  const list=[];
-  const push=(tk,acc,cur)=>{ if(tk&&acc) list.push({token:tk,loginid:acc,currency:cur||'USD',is_virtual:/VRTC/.test(acc)}); };
-  if(h.get('token')||h.get('acct')) push(h.get('token'),h.get('acct'),h.get('cur'));
-  for(let i=1;i<=20;i++) push(h.get('token'+i),h.get('acct'+i),h.get('cur'+i));
-  if(list.length){
-    localStorage.setItem('deriv_oauth_map', JSON.stringify(list));
-    history.replaceState({}, document.title, location.origin+location.pathname);
-  }else{
-    try{ const c=JSON.parse(localStorage.getItem('deriv_oauth_map')||'[]'); if(Array.isArray(c)) return c; }catch{}
-  }
-  return list;
-}
-function populateAccounts(){
-  const sel=$('account_select'); sel.innerHTML='';
-  const list=parseOAuthTokens();
-  if(!list.length){ sel.disabled=true; const o=document.createElement('option'); o.text='—'; sel.appendChild(o); return; }
-  list.forEach((a,i)=>{ const o=document.createElement('option'); o.value=String(i); o.textContent=`${a.loginid} • ${a.is_virtual?'DEMO':'REAL'} ${a.currency}`; sel.appendChild(o); });
-  sel.disabled=false;
-}
-function getSelectedAccount(){ const list=parseOAuthTokens(); const idx=parseInt(($('account_select').value||'0'),10); return list[idx]||null; }
-
-/* ======== WebSocket ======== */
-function wsSend(o){ if(ws && ws.readyState===1) ws.send(JSON.stringify(o)); }
-function connectWS(){
-  const acc=getSelectedAccount(); if(!acc){ beginOAuth(); return; }
-  if(ws){ try{ws.close()}catch(e){} }
-
-  ws = new WebSocket(`wss://ws.derivws.com/websockets/v3?app_id=${APP_ID}`);
-  ws.onopen = ()=> wsSend({authorize:acc.token});
-  ws.onclose = ()=> { authorized=false; setConn(false); setTicks(false); };
-  ws.onerror = ()=> { try{ws.close()}catch(e){} };
-  ws.onmessage = onWS;
-}
-function reconnect(){ if(authorized){ connectWS(); } }
-function hardDisconnect(){
-  try{ws?.close()}catch(e){}
-  localStorage.removeItem('deriv_oauth_map');
-  location.reload();
-}
-function setConn(ok){ $('st_conn').textContent= ok?'Conectado':'Offline'; $('st_conn').className='badge '+(ok?'ok':'err'); }
-function setTicks(ok){ $('st_ticks').textContent= ok?'Ticks':'Sem Ticks'; $('st_ticks').className='badge '+(ok?'ok':'warn'); }
-
-function onWS(ev){
-  const d = JSON.parse(ev.data);
-  if(d.error){ console.warn(d.error); return; }
-
-  switch(d.msg_type){
-    case 'authorize':
-      authorized = true;
-      account_info = {
-        loginid: d.authorize.loginid,
-        currency: d.authorize.currency || 'USD',
-        is_virtual: d.authorize.is_virtual
+    // ------------- WebSocket Core -------------
+    function connectWS(){
+      if(ws && ws.readyState===1) return;
+      ws = new WebSocket(WS_URL);
+      ws.onopen = ()=>{
+        setConnectedUI(true);
+        // se já tínhamos uma conta escolhida, reautoriza
+        const remembered = JSON.parse(localStorage.getItem('POINT_SELECTED')||'null');
+        const tokens = getStoredTokens();
+        if(remembered && tokens.length){
+          const match = tokens.find(t=>t.account===remembered.account);
+          if(match) authorize(match.token, match.account, match.currency);
+        }
       };
-      $('acc_type').textContent = account_info.is_virtual?'Conta DEMO':'Conta REAL';
-      setConn(true);
-      wsSend({balance:1, subscribe:1});
-      subscribeTicks();
-      subscribeCandles();
-      refreshPOs();
-      break;
+      ws.onclose = ()=>{
+        setConnectedUI(false);
+        setAuthUI(false);
+      };
+      ws.onmessage = handleMessage;
+      ws.onerror = (e)=>toast('WebSocket error', true);
+    }
 
-    case 'balance':
-      $('balance').textContent = `${fmt(d.balance.balance,2)} ${d.balance.currency}`;
-      break;
+    function send(msg){
+      if(!ws || ws.readyState!==1){ toast('WS não conectado', true); return; }
+      ws.send(JSON.stringify(msg));
+    }
 
-    case 'tick':
-      if(d.tick && d.tick.symbol === $('symbol').value){
-        lastPrice = Number(d.tick.quote);
-        $('last_price').textContent = fmt(lastPrice, 2);
-        setTicks(true);
-        onPriceForProb(lastPrice);
+    function handleMessage(evt){
+      const data = JSON.parse(evt.data);
+
+      if(data.error){
+        toast(data.error.message, true);
+        return;
       }
-      break;
 
-    case 'ohlc':
-      if(d.ohlc && d.ohlc.symbol === $('symbol').value){
-        pushOrMergeCandle(d.ohlc);
-        $('candle_hint').textContent = `Última vela: ${new Date(d.ohlc.epoch*1000).toLocaleTimeString()}`;
+      // authorize
+      if(data.msg_type==='authorize'){
+        loginId = data.authorize.loginid;
+        currency = data.authorize.currency || 'USD';
+        setAuthUI(true);
+        loadActiveSymbols();
+        els.posStatus.textContent = 'Nenhuma posição aberta.';
       }
-      break;
 
-    case 'proposal':
-      // ao propor MULTUP/MULTDOWN compramos
-      if(d.proposal && d.proposal.id && d.proposal.contract_type){
-        wsSend({ buy: d.proposal.id, price: d.proposal.ask_price });
+      // active_symbols -> popula select
+      if(data.msg_type==='active_symbols'){
+        const syms = (data.active_symbols||[])
+          .filter(s=>s.market==='synthetic_index' || s.symbol.includes('R_') || s.symbol.includes('VOL') || s.market==='cryptocurrency')
+          .map(s=>({symbol:s.symbol, display:`${s.display_name} (${s.symbol})`}));
+        els.symbolSelect.innerHTML = '';
+        syms.forEach(s=>{
+          const o=document.createElement('option');
+          o.value = s.symbol; o.textContent = s.display;
+          els.symbolSelect.appendChild(o);
+        });
+        // auto-subscribe first
+        if(syms[0]) subscribeTicks(syms[0].symbol);
       }
-      break;
 
-    case 'buy':
-      if(d.buy){
-        // assinar updates do contrato comprado
-        wsSend({ proposal_open_contract:1, contract_id:d.buy.contract_id, subscribe:1 });
-        addPositionRow(d.buy);
+      // ticks
+      if(data.msg_type==='tick'){
+        els.tickPrice.textContent = data.tick.quote.toFixed(5);
       }
-      break;
 
-    case 'proposal_open_contract':
-      if(d.proposal_open_contract){
-        updatePositionRow(d.proposal_open_contract);
+      if(data.msg_type==='proposal'){
+        // Depois do proposal, chamamos buy automaticamente
+        if(data.proposal && data.proposal.id){
+          const id = data.proposal.id;
+          send({ buy: id, price: data.proposal.ask_price });
+        }
       }
-      break;
 
-    case 'portfolio':
-      // não usado no momento
-      break;
-  }
-}
+      if(data.msg_type==='buy'){
+        // Contrato comprado
+        if(data.buy && data.buy.contract_id){
+          openContractId = data.buy.contract_id;
+          els.posStatus.textContent = `Contrato #${openContractId} aberto. A acompanhar...`;
+          els.closeBtn.classList.remove('hidden');
+          subscribeOpenContract(openContractId);
+        }
+      }
 
-/* ======== Subscrições ======== */
-function subscribeTicks(){
-  wsSend({forget_all:'ticks'});
-  wsSend({ticks:$('symbol').value, subscribe:1});
-}
-function subscribeCandles(){
-  wsSend({forget_all:'ohlc'});
-  candleData.length=0; chart.update();
-  const sym=$('symbol').value, gran=parseInt($('gran').value,10);
-  // histórico inicial + stream
-  wsSend({
-    ticks_history: sym,
-    style: 'candles',
-    count: 120,
-    granularity: gran,
-    subscribe: 1
-  });
-}
+      if(data.msg_type==='proposal_open_contract'){
+        const poc = data.proposal_open_contract;
+        if(!poc) return;
+        if(poc.contract_id) openContractId = poc.contract_id;
+        const pl = (poc.profit || 0);
+        els.plVal.textContent = `${pl.toFixed(2)} ${currency}`;
+        // fechado?
+        if(poc.is_sold){
+          els.posStatus.textContent = `Contrato fechado. Resultado: ${pl.toFixed(2)} ${currency}`;
+          cleanupPosition();
+        }
+      }
 
-/* ======== Ordens Multiplier ======== */
-function profileToMultiplier(){
-  const sel=$('mult').value;
-  if(sel) return Number(sel);
-  const p=$('profile').value;
-  if(p==='cons') return 100;
-  if(p==='mod')  return 400;
-  return 800; // agressivo
-}
-function placeMultiplier(type){ // MULTUP | MULTDOWN
-  if(!authorized){ alert('Conecte primeiro.'); return; }
-  const amount = Number($('stake').value)||1;
-  const mult   = profileToMultiplier();
-  const tp     = Number($('tp').value)||undefined;
-  const sl     = Number($('sl').value)||undefined;
-  const sym    = $('symbol').value;
-  const cur    = $('currency').value;
+      if(data.msg_type==='sell'){
+        // pedido de fechar enviado; aguarda poc is_sold
+        toast('Solicitado fechar posição.');
+      }
 
-  const params = {
-    proposal: 1,
-    amount,
-    basis: 'stake',
-    contract_type: type,          // MULTUP | MULTDOWN
-    currency: cur,
-    symbol: sym,
-    multiplier: mult
-  };
-  if(tp) params.take_profit = tp;
-  if(sl) params.stop_loss   = sl;
+      if(data.msg_type==='forget'){
+        // ok
+      }
+    }
 
-  wsSend(params);
-}
+    // ------------- Fluxos API -------------
+    function authorize(token, acct, cur){
+      selectedToken = token;
+      currency = (cur||'USD').toUpperCase();
+      send({ authorize: token, passthrough:{acct} });
+    }
 
-function closeAll(){
-  const rows=[...document.querySelectorAll('#pos_body tr')];
-  rows.forEach(tr=>{
-    const id = tr.getAttribute('data-id');
-    if(id) wsSend({ sell:id });
-  });
-}
+    function loadActiveSymbols(){
+      send({ active_symbols: 'brief', product_type: 'basic' });
+    }
 
-/* ======== Posições abertas (UI) ======== */
-function addPositionRow(buy){
-  const tb = $('pos_body');
-  const tr = document.createElement('tr');
-  tr.setAttribute('data-id', buy.contract_id);
-  tr.innerHTML = `
-    <td>${new Date().toLocaleTimeString()}</td>
-    <td><span class="chip">${buy.contract_type.replace('MULT','')}</span></td>
-    <td>${$('symbol').selectedOptions[0].textContent}</td>
-    <td>$${fmt(buy.buy_price,2)}</td>
-    <td>x<span class="multv">${profileToMultiplier()}</span></td>
-    <td class="pl">$0.00</td>
-    <td><button class="btn danger small">Fechar</button></td>
-  `;
-  tr.querySelector('button').onclick = ()=> wsSend({ sell: buy.contract_id });
-  tb.prepend(tr);
-}
+    function subscribeTicks(symbol){
+      if(tickSubId){ send({ forget: tickSubId }); tickSubId=null; }
+      els.tickSymbol.textContent = symbol;
+      els.tickNote.textContent = 'Recebendo ticks...';
+      send({ ticks: symbol, subscribe: 1 });
+      // o id vem em cada resposta de tick; vamos capturar no próximo tick
+      ws.addEventListener('message', function once(e){
+        const d = JSON.parse(e.data);
+        if(d.msg_type==='tick' && d.tick && d.subscription && d.subscription.id){
+          tickSubId = d.subscription.id;
+          ws.removeEventListener('message', once);
+        }
+      });
+    }
 
-function updatePositionRow(poc){
-  const tr = document.querySelector(`#pos_body tr[data-id="${poc.contract_id}"]`);
-  if(!tr) return;
-  const plCell = tr.querySelector('.pl');
-  const pl = Number(poc.profit||0);
-  plCell.textContent = (pl>=0?'+$':'-$') + fmt(Math.abs(pl),2);
-  plCell.style.color = pl>=0? '#22c55e':'#ef4444';
+    function subscribeOpenContract(contract_id){
+      if(pocSubId){ send({ forget: pocSubId }); pocSubId=null; }
+      send({ proposal_open_contract: 1, contract_id, subscribe: 1 });
+      ws.addEventListener('message', function once(e){
+        const d = JSON.parse(e.data);
+        if(d.msg_type==='proposal_open_contract' && d.subscription && d.subscription.id){
+          pocSubId = d.subscription.id;
+          ws.removeEventListener('message', once);
+        }
+      });
+    }
 
-  // se fechou, somar à sessão e remover linha
-  if(poc.is_sold){
-    session_pl += pl;
-    $('pl_session').textContent = fmt(session_pl,2);
-    $('pl_total').textContent   = '$'+fmt(session_pl,2);
-    tr.remove();
-  }
-}
+    function cleanupPosition(){
+      openContractId = null;
+      if(pocSubId){ send({ forget: pocSubId }); pocSubId=null; }
+      els.closeBtn.classList.add('hidden');
+      els.plVal.textContent = '—';
+    }
 
-function refreshPOs(){
-  // pedir todos contratos abertos e assinar cada um
-  wsSend({ forget_all:'proposal_open_contract' });
-  wsSend({ portfolio:1 });
-  // O Explorer mostra um endpoint 'portfolio', mas o stream oficial é via buy/POC;
-  // aqui puxamos manualmente os IDs usando uma chamada WebSocket auxiliar:
-  fetch('https://api.deriv.com/binary/v3/',{
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({portfolio:1, req_id: Date.now(), app_id: APP_ID, oauth_token: (getSelectedAccount()?.token || '')})
-  }).then(r=>r.json()).then(j=>{
-    const list = j.portfolio?.contracts || [];
-    list.forEach(c=>{
-      wsSend({ proposal_open_contract:1, contract_id:c.contract_id, subscribe:1 });
-    });
-  }).catch(()=>{});
-}
+    function placeMultiplier(direction){
+      if(!authorized) return toast('Autorize primeiro', true);
+      const symbol = els.symbolSelect.value;
+      const amount = Number(els.stakeInput.value||0);
+      const multiplier = Number(els.multInput.value||100);
+      if(!symbol || !amount) return toast('Preencha símbolo e stake', true);
 
-/* ======== Watchdog leve ======== */
-setInterval(()=>{
-  if(!ws || ws.readyState!==1){
-    setConn(false); setTicks(false);
-  }
-}, 3000);
-</script>
+      // limit_order opcional
+      const limit_order = {};
+      const tp = Number(els.tpInput.value||0);
+      const sl = Number(els.slInput.value||0);
+      if(tp>0) limit_order.take_profit = tp;
+      if(sl>0) limit_order.stop_loss = sl;
+
+      const req = {
+        proposal: 1,
+        amount,
+        basis: 'stake',
+        contract_type: direction==='up' ? 'MULTUP' : 'MULTDOWN',
+        currency,
+        symbol,
+        multiplier,
+      };
+      if(Object.keys(limit_order).length) req.limit_order = limit_order;
+      const dc = els.dcInput.value;
+      if(dc) req.cancellation = dc;
+
+      send(req);
+      els.posStatus.textContent = 'Enviando proposal...';
+    }
+
+    // ------------- Eventos UI -------------
+    els.loginBtn.onclick = ()=>{ window.location.href = OAUTH_URL; };
+    els.logoutBtn.onclick = ()=>{
+      cleanupPosition();
+      if(ws && ws.readyState===1) ws.close();
+      clearTokens();
+      selectedToken=null; loginId=null; setAuthUI(false);
+      els.accountSelect.innerHTML = '';
+      toast('Sessão limpa.');
+    };
+
+    els.useAccountBtn.onclick = ()=>{
+      const opt = els.accountSelect.value;
+      if(!opt) return;
+      const tokens = getStoredTokens();
+      const chosen = tokens.find(t=>t.account===opt);
+      if(!chosen) return;
+      localStorage.setItem('POINT_SELECTED', JSON.stringify(chosen));
+      if(ws && ws.readyState===1) authorize(chosen.token, chosen.account, chosen.currency);
+      else connectWS();
+    };
+
+    els.symbolSelect.onchange = (e)=> subscribeTicks(e.target.value);
+    els.upBtn.onclick = ()=>placeMultiplier('up');
+    els.downBtn.onclick = ()=>placeMultiplier('down');
+    els.closeBtn.onclick = ()=>{
+      if(!openContractId) return;
+      send({ sell: openContractId, price: 0 });
+    };
+
+    // ------------- Inicialização -------------
+    extractTokensFromUrl();
+    const tokens = getStoredTokens();
+    if(tokens.length){
+      // popular seletor de contas
+      els.accountSelect.innerHTML = '';
+      tokens.forEach(t=>{
+        const o=document.createElement('option');
+        o.value=t.account; o.textContent=`${t.account} • ${t.currency}`;
+        els.accountSelect.appendChild(o);
+      });
+      els.accountSelect.disabled = false;
+      els.useAccountBtn.disabled = false;
+      // conectar WS e autorizar na primeira conta por padrão
+      connectWS();
+      const first = tokens[0];
+      localStorage.setItem('POINT_SELECTED', JSON.stringify(first));
+      authorize(first.token, first.account, first.currency);
+    } else {
+      // ainda sem OAuth -> conecta WS só para status
+      connectWS();
+    }
+  </script>
 </body>
 </html>
