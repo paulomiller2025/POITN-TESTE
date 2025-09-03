@@ -98,38 +98,38 @@
         </div>
       </div>
 
-      <!-- CENTRO: GRÁFICO -->
-      <div class="card p-4">
-        <div class="flex items-center justify-between mb-3">
-          <div class="text-xs uppercase tracking-wide text-slate-400">Gráfico de Velas</div>
-          <div class="flex items-center gap-2">
-            <label class="text-xs text-slate-400">Intervalo:</label>
-            <select id="timeframeSelect" class="pill px-3 py-2 rounded-xl text-xs bg-transparent text-slate-200">
-              <option value="60" selected>1m</option>
-              <option value="120">2m</option>
-              <option value="180">3m</option>
-              <option value="300">5m</option>
-              <option value="600">10m</option>
-              <option value="900">15m</option>
-              <option value="1800">30m</option>
-              <option value="3600">1h</option>
-              <option value="7200">2h</option>
-              <option value="14400">4h</option>
-              <option value="28800">8h</option>
-              <option value="86400">1d</option>
-            </select>
-            <div class="flex items-center gap-1 ml-2">
-              <button id="zoomInBtn" class="btn px-2 py-1 rounded-md border border-white/10 text-xs">+</button>
-              <button id="zoomOutBtn" class="btn px-2 py-1 rounded-md border border-white/10 text-xs">−</button>
-              <button id="zoomFitBtn" class="btn px-2 py-1 rounded-md border border-white/10 text-xs">Fit</button>
+        <!-- CENTRO: GRÁFICO -->
+        <div class="card p-4">
+          <div class="flex items-center justify-between mb-3">
+            <div class="text-xs uppercase tracking-wide text-slate-400">Gráfico de Velas</div>
+            <div class="flex items-center gap-2">
+              <label class="text-xs text-slate-400">Intervalo:</label>
+              <select id="timeframeSelect" class="pill px-3 py-2 rounded-xl text-xs bg-transparent text-slate-200">
+                <option value="60" selected>1m</option>
+                <option value="120">2m</option>
+                <option value="180">3m</option>
+                <option value="300">5m</option>
+                <option value="600">10m</option>
+                <option value="900">15m</option>
+                <option value="1800">30m</option>
+                <option value="3600">1h</option>
+                <option value="7200">2h</option>
+                <option value="14400">4h</option>
+                <option value="28800">8h</option>
+                <option value="86400">1d</option>
+              </select>
+              <div class="flex items-center gap-1 ml-2">
+                <button id="zoomInBtn" class="btn px-2 py-1 rounded-md border border-white/10 text-xs">+</button>
+                <button id="zoomOutBtn" class="btn px-2 py-1 rounded-md border border-white/10 text-xs">−</button>
+                <button id="zoomFitBtn" class="btn px-2 py-1 rounded-md border border-white/10 text-xs">Fit</button>
+              </div>
+              <div class="text-xs text-slate-400 ml-2" id="chartInfo">1m candles • stream</div>
             </div>
-            <div class="text-xs text-slate-400 ml-2" id="chartInfo">1m candles • stream</div>
+          </div>
+          <div id="chartWrap" class="rounded-xl overflow-hidden">
+            <div id="chart"></div>
           </div>
         </div>
-        <div id="chartWrap" class="rounded-xl overflow-hidden">
-          <div id="chart"></div>
-        </div>
-      </div>
 
       <!-- DIREITA -->
       <div class="space-y-4">
@@ -263,21 +263,77 @@
     }
     function toast(msg,isErr=false){ (isErr?console.error:console.log)(msg); if(isErr) showAlert(msg,'err'); }
 
-    /* ---- OAuth tokens ---- */
-    function parseTokensFromSearchOrHash(qs){
-      const p = new URLSearchParams(qs), out=[];
-      for(let i=1;i<=10;i++){
-        const tokenI=p.get(`token${i}`)||p.get(`access_token${i}`), acctI=p.get(`acct${i}`)||p.get(`loginid${i}`), curI=p.get(`cur${i}`)||p.get(`currency${i}`);
-        if(tokenI) out.push({token:tokenI, account:(acctI||'').toUpperCase()||null, currency:(curI||'USD').toUpperCase()});
+    /* ---- OAuth tokens (parser super-robusto) ---- */
+    function parseAnyTokens(input){
+      const out=[];
+      if(!input) return out;
+      const p = new URLSearchParams(input);
+
+      // 1) Lista JSON em "tokens" (Deriv pode retornar isso)
+      const rawList = p.get('tokens') || p.get('oauth_tokens');
+      if(rawList){
+        try{
+          const decoded = decodeURIComponent(rawList);
+          const arr = JSON.parse(decoded);
+          if(Array.isArray(arr)){
+            arr.forEach(t=>{
+              if(t && (t.token || t.access_token)){
+                out.push({
+                  token: t.token || t.access_token,
+                  account: (t.loginid || t.account || '').toUpperCase() || null,
+                  currency: (t.currency || 'USD').toUpperCase()
+                });
+              }
+            });
+          }
+        }catch(e){}
       }
-      const token=p.get('token')||p.get('access_token');
-      if(token) out.push({token, account:(p.get('acct')||p.get('loginid')||'').toUpperCase()||null, currency:(p.get('cur')||p.get('currency')||'USD').toUpperCase()});
+
+      // 2) access_token / token / oauth_token / auth_token (simples)
+      const simpleKeys = ['access_token','token','oauth_token','auth_token'];
+      simpleKeys.forEach(k=>{
+        const v = p.get(k);
+        if(v){
+          out.push({
+            token: v,
+            account: (p.get('loginid') || p.get('acct') || p.get('account') || '').toUpperCase() || null,
+            currency: (p.get('currency') || p.get('cur') || 'USD').toUpperCase()
+          });
+        }
+      });
+
+      // 3) Versões numeradas token1..token10 (+ pares acctN / loginidN / currencyN)
+      for(let i=1;i<=10;i++){
+        const t = p.get(`token${i}`) || p.get(`access_token${i}`) || p.get(`oauth_token${i}`);
+        if(t){
+          out.push({
+            token: t,
+            account: (p.get(`acct${i}`) || p.get(`loginid${i}`) || '').toUpperCase() || null,
+            currency: (p.get(`currency${i}`) || p.get(`cur${i}`) || 'USD').toUpperCase()
+          });
+        }
+      }
+
+      // 4) Heurística: qualquer chave contendo "token"
+      p.forEach((val,key)=>{
+        if(/token/i.test(key) && typeof val==='string' && val.length>20){
+          if(!out.find(o=>o.token===val)){
+            out.push({
+              token: val,
+              account: (p.get('loginid') || p.get('acct') || '').toUpperCase() || null,
+              currency: (p.get('currency') || p.get('cur') || 'USD').toUpperCase()
+            });
+          }
+        }
+      });
+
       return out;
     }
+
     function extractTokensFromUrl(){
-      const q = location.search.startsWith('?')?location.search.slice(1):'';
-      const h = location.hash.startsWith('#')?location.hash.slice(1):'';
-      const tokens=[...parseTokensFromSearchOrHash(q),...parseTokensFromSearchOrHash(h)];
+      const q = location.search.startsWith('?') ? location.search.slice(1) : '';
+      const h = location.hash.startsWith('#') ? location.hash.slice(1) : '';
+      const tokens = [...parseAnyTokens(q), ...parseAnyTokens(h)];
       if(tokens.length){
         localStorage.setItem('POINT_TOKENS', JSON.stringify(tokens));
         history.replaceState({}, document.title, BASE_URL);
@@ -298,7 +354,6 @@
         if(tokens.length){
           const sel = JSON.parse(localStorage.getItem('POINT_SELECTED')||'null') || tokens[0];
           authorize(sel.token, sel.account, sel.currency);
-          // Se por qualquer motivo a Deriv não responder authorize, tenta novamente após 3s
           clearTimeout(authRetryTimer);
           authRetryTimer = setTimeout(()=>{
             if(!authorized){
@@ -355,7 +410,6 @@
         setAuthUI(true); hideAlert();
         updateAcctType(loginId);
 
-        // popular conta se ainda vazia
         if(!els.accountSelect.options.length){
           const opt=document.createElement('option');
           opt.value=loginId; opt.textContent=`${loginId} • ${currency}`;
