@@ -83,9 +83,7 @@
           <label class="text-sm text-slate-300">Conta:</label>
           <select id="accountSelect" class="pill px-3 py-2 text-sm text-slate-200 bg-transparent min-w-[220px]" disabled></select>
 
-          <span id="acctType" class="text-xs px-2 py-1 rounded-md bg-white/10 border border-white/10 text-slate-200">
-            —
-          </span>
+          <span id="acctType" class="text-xs px-2 py-1 rounded-md bg-white/10 border border-white/10 text-slate-200">—</span>
 
           <label class="text-sm text-slate-300">Saldo:</label>
           <input id="balanceInput" class="pill px-3 py-2 text-sm bg-transparent text-slate-200 w-44 text-right" placeholder="—" disabled />
@@ -226,13 +224,12 @@
     // ================== CONFIG ==================
     const APP_ID = 98640; // POINT
     const WS_URL = `wss://ws.derivws.com/websockets/v3?app_id=${APP_ID}`;
-    // tenta com redirect_uri se o site estiver em http/https e você tiver configurado isso no App da Deriv
+
+    // OAuth: usa redirect_uri em http/https e faz fallback automático
     const CAN_USE_REDIRECT = location.protocol === 'http:' || location.protocol === 'https:';
     const REDIRECT_URL = CAN_USE_REDIRECT ? (window.location.origin + window.location.pathname) : '';
-    const OAUTH_WITH_REDIRECT = `https://oauth.deriv.com/oauth2/authorize?app_id=${APP_ID}&redirect_uri=${encodeURIComponent(REDIRECT_URL)}`;
-    // fallback (usa o Redirect cadastrado no App da Deriv)
-    const OAUTH_FALLBACK = `https://oauth.deriv.com/oauth2/authorize?app_id=${APP_ID}`;
-    const OAUTH_URL = CAN_USE_REDIRECT ? OAUTH_WITH_REDIRECT : OAUTH_FALLBACK;
+    const OAUTH_URL = `https://oauth.deriv.com/oauth2/authorize?app_id=${APP_ID}`
+      + (CAN_USE_REDIRECT ? `&redirect_uri=${encodeURIComponent(REDIRECT_URL)}` : '');
 
     const DEFAULT_SYMBOL = '1HZ100V'; // Volatility 100 (1s)
     let CANDLE_GRANULARITY = 60; // padrão 1m
@@ -619,12 +616,16 @@
     }
 
     // ------------- Eventos UI -------------
-    els.loginBtn.onclick = ()=>{
-      if(!CAN_USE_REDIRECT){
-        alert('Para conectar via OAuth, abra este arquivo por http/https (ex.: usando Live Server) — o protocolo file:// bloqueia o fluxo.');
+    els.loginBtn.onclick = () => {
+      // file:// não funciona para OAuth — avisa e continua (fallback sem redirect pode abrir a tela de login)
+      if (!(location.protocol === 'http:' || location.protocol === 'https:')) {
+        alert('Para conectar via OAuth, abra este arquivo usando http/https (ex.: Live Server no VSCode). O protocolo file:// bloqueia o OAuth.');
       }
-      // tenta com redirect_uri; se houver erro de navegação, o fallback ainda funciona pois o servidor da Deriv valida o redirect
-      window.location.href = OAUTH_URL;
+      try {
+        window.location.assign(OAUTH_URL);
+      } catch (e) {
+        window.location.href = OAUTH_URL;
+      }
     };
 
     els.logoutBtn.onclick = ()=>{
@@ -649,7 +650,7 @@
       const chosen = tokens.find(t=>t.account===opt);
       if(!chosen) return;
       localStorage.setItem('POINT_SELECTED', JSON.stringify(chosen));
-      updateAcctType(opt);
+      updateAcctType(chosen.account);
       if(ws && ws.readyState===1) authorize(chosen.token, chosen.account, chosen.currency);
       else connectWS();
       setTimeout(()=>{ subscribeBalance(); requestBalanceOnce(); }, 200);
@@ -687,6 +688,8 @@
     function initTokensAndConnect(){
       extractTokensFromUrl();
       const tokens = getStoredTokens();
+      connectWS(); // WS sempre primeiro
+
       if(tokens.length){
         els.accountSelect.innerHTML = '';
         tokens.forEach(t=>{
@@ -699,10 +702,7 @@
         const first = tokens[0];
         localStorage.setItem('POINT_SELECTED', JSON.stringify(first));
         updateAcctType(first.account);
-        connectWS();
         authorize(first.token, first.account, first.currency);
-      } else {
-        connectWS(); // mantém WS pronto; ao voltar do OAuth, os tokens serão lidos
       }
     }
 
