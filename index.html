@@ -24,24 +24,28 @@
     select:focus, select:active { color:#000 !important; }
     select option { color:#000; }
 
-    /* Layout principal: 3 colunas (esq — centro — dir) */
+    /* Layout principal: 3 colunas (esq — centro — dir) com mais espaço ao gráfico */
     .layout-3 {
       display: grid;
-      grid-template-columns: 300px 1fr 340px;
-      gap: 1rem;
+      grid-template-columns: 340px 1fr 380px;
+      gap: 1.25rem;
+      align-items: stretch;
+    }
+    @media (max-width: 1280px){
+      .layout-3 { grid-template-columns: 300px 1fr 340px; }
     }
     @media (max-width: 1024px){
       .layout-3 { grid-template-columns: 1fr; }
     }
 
-    /* Altura do gráfico */
-    #chartWrap{ height: 460px; }
+    /* Altura do gráfico (mais largo/alto) */
+    #chartWrap{ height: 560px; }
     #chart{ width:100%; height:100%; }
   </style>
 </head>
 <body>
   <header class="sticky top-0 z-50 border-b border-slate-800 bg-[color:var(--soft)]">
-    <div class="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
+    <div class="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
       <div class="flex items-center gap-3">
         <div class="w-9 h-9 rounded-xl bg-indigo-500/20 flex items-center justify-center">
           <span class="text-indigo-300 font-bold">P</span>
@@ -58,7 +62,7 @@
     </div>
   </header>
 
-  <main class="max-w-6xl mx-auto px-4 py-6 space-y-4">
+  <main class="max-w-7xl mx-auto px-4 py-6 space-y-4">
     <!-- STATUS / CONTAS -->
     <section class="card rounded-2xl p-4">
       <div class="flex flex-wrap items-center gap-3 justify-between">
@@ -127,9 +131,26 @@
 
       <!-- CENTRO: GRÁFICO -->
       <div class="card rounded-2xl p-4">
-        <div class="flex items-center justify-between mb-2">
+        <div class="flex items-center justify-between mb-3">
           <div class="text-xs uppercase tracking-wide text-slate-400">Gráfico de Velas</div>
-          <div class="text-xs text-slate-400" id="chartInfo">1m candles • stream</div>
+          <div class="flex items-center gap-2">
+            <label class="text-xs text-slate-400">Intervalo:</label>
+            <select id="timeframeSelect" class="pill px-3 py-2 rounded-xl text-xs bg-transparent text-slate-200">
+              <option value="60" selected>1m</option>
+              <option value="120">2m</option>
+              <option value="180">3m</option>
+              <option value="300">5m</option>
+              <option value="600">10m</option>
+              <option value="900">15m</option>
+              <option value="1800">30m</option>
+              <option value="3600">1h</option>
+              <option value="7200">2h</option>
+              <option value="14400">4h</option>
+              <option value="28800">8h</option>
+              <option value="86400">1d</option>
+            </select>
+            <div class="text-xs text-slate-400" id="chartInfo">1m candles • stream</div>
+          </div>
         </div>
         <div id="chartWrap" class="rounded-xl overflow-hidden">
           <div id="chart"></div>
@@ -207,7 +228,7 @@
     const WS_URL = `wss://ws.derivws.com/websockets/v3?app_id=${APP_ID}`;
     const OAUTH_URL = `https://oauth.deriv.com/oauth2/authorize?app_id=${APP_ID}`;
     const DEFAULT_SYMBOL = '1HZ100V'; // Volatility 100 (1s)
-    const CANDLE_GRANULARITY = 60; // 1m
+    let CANDLE_GRANULARITY = 60; // padrão 1m
     // ============================================
 
     // Estado global simples
@@ -244,6 +265,7 @@
       closeBtn: document.getElementById('closeBtn'),
       balanceInput: document.getElementById('balanceInput'),
       chartInfo: document.getElementById('chartInfo'),
+      timeframeSelect: document.getElementById('timeframeSelect'),
     };
 
     // === Chart (Lightweight Charts) ===
@@ -256,7 +278,9 @@
       timeScale: { borderColor: '#334155' },
     });
     const candleSeries = chart.addCandlestickSeries({
-      upColor: '#22c55e', downColor: '#ef4444', borderDownColor: '#ef4444', borderUpColor: '#22c55e', wickDownColor: '#ef4444', wickUpColor: '#22c55e',
+      upColor: '#22c55e', downColor: '#ef4444',
+      borderDownColor: '#ef4444', borderUpColor: '#22c55e',
+      wickDownColor: '#ef4444', wickUpColor: '#22c55e',
     });
 
     function resizeChart(){
@@ -273,7 +297,7 @@
     function setAuthUI(on){
       authorized = !!on;
       const dis = !on;
-      [els.accountSelect, els.symbolSelect, els.stakeInput, els.multInput, els.tpInput, els.slInput, els.dcInput, els.upBtn, els.downBtn].forEach(el=>{
+      [els.accountSelect, els.symbolSelect, els.stakeInput, els.multInput, els.tpInput, els.slInput, els.dcInput, els.upBtn, els.downBtn, els.timeframeSelect].forEach(el=>{
         el.disabled = dis;
       });
       els.logoutBtn.classList.toggle('hidden', !on);
@@ -283,12 +307,9 @@
         : 'Clique em Conectar para iniciar o OAuth.';
       if(dis){ els.balanceInput.value = ''; els.balanceInput.placeholder = '—'; }
     }
-    function toast(msg,isErr=false){
-      console[isErr?'error':'log'](msg);
-    }
+    function toast(msg,isErr=false){ console[isErr?'error':'log'](msg); }
 
     // ------------- OAuth: captura tokens do redirect -------------
-    // Esperado: ?acct1=CRxxxx&token1=...&cur1=USD&acct2=VRTC...&token2=...
     function extractTokensFromUrl(){
       const q = new URLSearchParams(location.search);
       const tokens = [];
@@ -355,7 +376,6 @@
         loadActiveSymbols();
         els.posStatus.textContent = 'Nenhuma posição aberta.';
         subscribeBalance(); // saldo ao autorizar
-        // Se ainda não definimos símbolo, usar o padrão
         setTimeout(()=>ensureDefaultSymbol(), 50);
       }
 
@@ -370,7 +390,6 @@
           o.value = s.symbol; o.textContent = s.display;
           els.symbolSelect.appendChild(o);
         });
-        // Seleciona DEFAULT_SYMBOL se existir; senão, primeiro disponível
         const hasDefault = syms.find(s=>s.symbol===DEFAULT_SYMBOL);
         els.symbolSelect.value = hasDefault ? DEFAULT_SYMBOL : (syms[0]?.symbol||'');
         if(els.symbolSelect.value){
@@ -379,7 +398,7 @@
         }
       }
 
-      // ticks (formatação pedida: remover 2 zeros finais)
+      // ticks (sem dois zeros finais)
       if(data.msg_type==='tick'){
         const q = Number(data.tick.quote);
         let s = q.toFixed(5);
@@ -389,9 +408,7 @@
 
       // candles stream
       if(data.msg_type==='candles'){
-        // Data pode vir como array inicial (count) ou unitária em stream
         const arr = Array.isArray(data.candles) ? data.candles : [data.candles];
-        // Mapeia para {time, open, high, low, close}
         const mapped = arr.map(c=>({
           time: Number(c.epoch),
           open: Number(c.open),
@@ -439,10 +456,7 @@
         }
       }
 
-      // sell enviado
-      if(data.msg_type==='sell'){
-        toast('Solicitado fechar posição.');
-      }
+      if(data.msg_type==='sell'){ toast('Solicitado fechar posição.'); }
 
       // balance (atualiza campo)
       if(data.msg_type==='balance'){
@@ -454,8 +468,6 @@
           balanceSubId = data.subscription.id;
         }
       }
-
-      if(data.msg_type==='forget'){ /* ok */ }
     }
 
     // ------------- Fluxos API -------------
@@ -497,7 +509,6 @@
 
     function subscribeCandles(symbol){
       if(candleSubId){ send({ forget: candleSubId }); candleSubId=null; }
-      // histórico inicial + stream de velas 1m
       send({
         ticks_history: symbol,
         style: 'candles',
@@ -514,6 +525,15 @@
           }
         }catch(_){}
       });
+      els.chartInfo.textContent = tfLabel(CANDLE_GRANULARITY) + ' candles • stream';
+    }
+
+    function tfLabel(g){
+      const map = {
+        60:'1m',120:'2m',180:'3m',300:'5m',600:'10m',900:'15m',
+        1800:'30m',3600:'1h',7200:'2h',14400:'4h',28800:'8h',86400:'1d'
+      };
+      return map[g] || (g+'s');
     }
 
     function subscribeOpenContract(contract_id){
@@ -551,7 +571,6 @@
       const multiplier = Number(els.multInput.value||10); // x10 padrão
       if(!symbol || !amount){ els.posStatus.textContent='Preencha símbolo e stake'; return; }
 
-      // limit_order opcional
       const limit_order = {};
       const tp = Number(els.tpInput.value||0);
       const sl = Number(els.slInput.value||0);
@@ -562,7 +581,7 @@
         proposal: 1,
         amount,
         basis: 'stake',
-        product_type: 'multiplier',                 // *** IMPORTANTE para Multipliers ***
+        product_type: 'multiplier',
         contract_type: direction==='up' ? 'MULTUP' : 'MULTDOWN',
         currency,
         symbol,
@@ -591,7 +610,7 @@
       toast('Sessão limpa.');
     };
 
-    // Troca de conta -> autoriza imediatamente e atualiza saldo automaticamente
+    // Troca de conta -> autoriza imediatamente e saldo atualiza automaticamente
     els.accountSelect.onchange = ()=>{
       const opt = els.accountSelect.value;
       if(!opt) return;
@@ -612,6 +631,13 @@
       subscribeCandles(sym);
     };
 
+    // Troca de timeframe -> resubscreve velas mantendo símbolo atual
+    els.timeframeSelect.onchange = (e)=>{
+      CANDLE_GRANULARITY = Number(e.target.value || 60);
+      const sym = els.symbolSelect.value || DEFAULT_SYMBOL;
+      if(sym){ subscribeCandles(sym); }
+    };
+
     els.upBtn.onclick = ()=>placeMultiplier('up');
     els.downBtn.onclick = ()=>placeMultiplier('down');
     els.closeBtn.onclick = ()=>{
@@ -620,27 +646,29 @@
     };
 
     // ------------- Inicialização -------------
-    extractTokensFromUrl();
-    const tokens = getStoredTokens();
-    if(tokens.length){
-      // popular seletor de contas
-      els.accountSelect.innerHTML = '';
-      tokens.forEach(t=>{
-        const o=document.createElement('option');
-        o.value=t.account; o.textContent=`${t.account} • ${t.currency}`;
-        els.accountSelect.appendChild(o);
-      });
-      els.accountSelect.disabled = false;
+    function initTokensAndConnect(){
+      extractTokensFromUrl();
+      const tokens = getStoredTokens();
+      if(tokens.length){
+        // popular seletor de contas
+        els.accountSelect.innerHTML = '';
+        tokens.forEach(t=>{
+          const o=document.createElement('option');
+          o.value=t.account; o.textContent=`${t.account} • ${t.currency}`;
+          els.accountSelect.appendChild(o);
+        });
+        els.accountSelect.disabled = false;
 
-      // escolher automática a primeira conta e autorizar
-      const first = tokens[0];
-      localStorage.setItem('POINT_SELECTED', JSON.stringify(first));
-      connectWS();
-      authorize(first.token, first.account, first.currency);
-    } else {
-      // ainda sem OAuth -> conecta WS só para status e carrega gráfico após login
-      connectWS();
+        const first = tokens[0];
+        localStorage.setItem('POINT_SELECTED', JSON.stringify(first));
+        connectWS();
+        authorize(first.token, first.account, first.currency);
+      } else {
+        connectWS(); // mantém WS para quando voltar do OAuth
+      }
     }
+
+    initTokensAndConnect();
   </script>
 </body>
 </html>
