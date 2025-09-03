@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>POINT — Multipliers (Deriv)</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <!-- Lightweight Charts (TradingView) para gráfico de velas -->
+  <!-- Lightweight Charts para velas -->
   <script src="https://unpkg.com/lightweight-charts@4.1.0/dist/lightweight-charts.standalone.production.js"></script>
   <style>
     :root{
@@ -24,7 +24,7 @@
     select:focus, select:active { color:#000 !important; }
     select option { color:#000; }
 
-    /* Altura padrão do gráfico */
+    /* Altura do gráfico */
     #chartWrap { height: 380px; transition: height .2s ease; }
     @media (min-width: 1024px){ #chartWrap{ height: 460px; } }
   </style>
@@ -70,7 +70,7 @@
             <select id="accountSelect" class="pill px-3 py-2 rounded-xl text-sm text-slate-200 bg-transparent" disabled></select>
             <button id="useAccountBtn" class="btn px-3 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-sm disabled:opacity-50" disabled>Usar conta</button>
           </div>
-          <!-- === Formulário de Saldo (por conta selecionada) === -->
+          <!-- === Saldo === -->
           <div class="flex items-center gap-3">
             <label class="text-sm text-slate-300">Saldo:</label>
             <input id="balanceInput" class="pill px-3 py-2 rounded-xl text-sm bg-transparent text-slate-200 w-40 text-right" placeholder="—" disabled />
@@ -141,7 +141,7 @@
             <button id="downBtn" class="btn flex-1 px-4 py-3 rounded-xl bg-rose-600 hover:bg-rose-500 text-white disabled:opacity-40" disabled>DOWN (MULTDOWN)</button>
           </div>
           <div class="text-xs text-slate-400">
-            Multipliers: perdas limitadas ao <b>stake</b>; podes fechar a qualquer momento; TP/SL e Cancellation suportados. 3
+            Multipliers: perdas limitadas ao <b>stake</b>; podes fechar a qualquer momento; TP/SL e Cancellation suportados.
           </div>
         </div>
 
@@ -162,7 +162,7 @@
         <div class="text-xs uppercase tracking-wide text-slate-400">Gráfico de Tendências (Velas)</div>
         <div class="flex items-center gap-2">
           <label for="tfSelect" class="text-xs text-slate-400">Timeframe</label>
-          <select id="tfSelect" class="pill px-2 py-1 rounded-lg text-sm bg-transparent text-slate-200">
+          <select id="tfSelect" class="pill px-2 py-1 rounded-lg text-sm bg-transparent text-slate-200" disabled>
             <option value="60" selected>1m</option>
             <option value="300">5m</option>
             <option value="900">15m</option>
@@ -192,7 +192,7 @@
     // ================== CONFIG ==================
     const APP_ID = 98640; // POINT
     const WS_URL = `wss://ws.derivws.com/websockets/v3?app_id=${APP_ID}`;
-    const OAUTH_URL = `https://oauth.deriv.com/oauth2/authorize?app_id=${APP_ID}`; // redireciona e retorna com tokens
+    const OAUTH_URL = `https://oauth.deriv.com/oauth2/authorize?app_id=${APP_ID}`;
     // ============================================
 
     // Estado global simples
@@ -206,13 +206,13 @@
     let pocSubId = null;
     let balanceSubId = null;
 
-    // ==== ESTADO DO GRÁFICO (NOVO) ====
+    // ==== ESTADO DO GRÁFICO ====
     let lwChart = null;
     let candleSeries = null;
     let ohlcSubId = null;
     let currentSymbol = null;
     let currentGranularity = 60; // 1m por padrão
-    // ==================================
+    // ============================
 
     const els = {
       loginBtn: document.getElementById('loginBtn'),
@@ -237,7 +237,6 @@
       closeBtn: document.getElementById('closeBtn'),
       balanceInput: document.getElementById('balanceInput'),
       refreshBalanceBtn: document.getElementById('refreshBalanceBtn'),
-      // === novos (gráfico) ===
       tfSelect: document.getElementById('tfSelect'),
       chartWrap: document.getElementById('chartWrap'),
     };
@@ -261,10 +260,11 @@
     }
     function toast(msg,isErr=false){
       console[isErr?'error':'log'](msg);
+      // também mostra no status de posição se for erro
+      if(isErr) els.posStatus.textContent = `Erro: ${msg}`;
     }
 
     // ------------- OAuth: captura tokens do redirect -------------
-    // Exemplo de retorno: .../redirect/?acct1=crxxxx&token1=aaaa&cur1=usd&acct2=vrtc...&token2=bbbb&cur2=usd
     function extractTokensFromUrl(){
       const q = new URLSearchParams(location.search);
       const tokens = [];
@@ -276,7 +276,6 @@
       }
       if(tokens.length){
         localStorage.setItem('POINT_TOKENS', JSON.stringify(tokens));
-        // remove params da barra
         history.replaceState({}, document.title, location.pathname);
       }
     }
@@ -294,7 +293,6 @@
       ws = new WebSocket(WS_URL);
       ws.onopen = ()=>{
         setConnectedUI(true);
-        // se já tínhamos uma conta escolhida, reautoriza
         const remembered = JSON.parse(localStorage.getItem('POINT_SELECTED')||'null');
         const tokens = getStoredTokens();
         if(remembered && tokens.length){
@@ -307,7 +305,7 @@
         setAuthUI(false);
       };
       ws.onmessage = handleMessage;
-      ws.onerror = (e)=>toast('WebSocket error', true);
+      ws.onerror = ()=>toast('WebSocket error', true);
     }
 
     function send(msg){
@@ -319,7 +317,7 @@
       const data = JSON.parse(evt.data);
 
       if(data.error){
-        toast(data.error.message, true);
+        toast(data.error.message || 'Erro desconhecido', true);
         return;
       }
 
@@ -328,10 +326,10 @@
         loginId = data.authorize.loginid;
         currency = data.authorize.currency || 'USD';
         setAuthUI(true);
-        initChart(); // === inicializa gráfico ao autorizar
+        initChart();
         loadActiveSymbols();
         els.posStatus.textContent = 'Nenhuma posição aberta.';
-        subscribeBalance(); // saldo ao autorizar
+        subscribeBalance();
       }
 
       // active_symbols -> popula select
@@ -345,11 +343,12 @@
           o.value = s.symbol; o.textContent = s.display;
           els.symbolSelect.appendChild(o);
         });
-        // auto-subscribe first
         if(syms[0]) {
-          subscribeTicks(syms[0].symbol);
-          currentSymbol = syms[0].symbol;
-          loadCandles(currentSymbol, currentGranularity); // === histórico + stream OHLC
+          const firstSym = syms[0].symbol;
+          subscribeTicks(firstSym);
+          currentSymbol = firstSym;
+          loadCandles(currentSymbol, currentGranularity);
+          checkMultipliersAvailability(currentSymbol); // <== garante que dá pra operar
         }
       }
 
@@ -357,11 +356,11 @@
       if(data.msg_type==='tick'){
         const q = Number(data.tick.quote);
         let s = q.toFixed(5);
-        if(s.endsWith('00')) s = s.slice(0,-2); // remove sempre dois zeros finais, se existirem
+        if(s.endsWith('00')) s = s.slice(0,-2);
         els.tickPrice.textContent = s;
       }
 
-      // === histórico de velas (candles)
+      // histórico candles
       if(data.msg_type==='candles' && Array.isArray(data.candles)){
         const bars = data.candles.map(c=>({
           time: Number(c.epoch),
@@ -370,21 +369,28 @@
           low: Number(c.low),
           close: Number(c.close),
         }));
-        if(candleSeries) candleSeries.setData(bars);
+        if(candleSeries){
+          candleSeries.setData(bars);
+          // enquadra e rola pro fim
+          lwChart.timeScale().fitContent();
+          lwChart.timeScale().scrollToRealTime();
+        }
       }
 
-      // === atualização em tempo real de OHLC (última vela)
+      // stream OHLC (tempo real)
       if(data.msg_type==='ohlc' && data.ohlc){
-        const c = data.ohlc;
         if(!candleSeries) return;
+        const c = data.ohlc;
+        const t = Number(c.epoch || c.open_time); // compat
         const bar = {
-          time: Number(c.open_time),
+          time: t,
           open: Number(c.open),
           high: Number(c.high),
           low: Number(c.low),
           close: Number(c.close),
         };
         candleSeries.update(bar);
+        lwChart.timeScale().scrollToRealTime();
       }
 
       // proposal -> buy
@@ -392,8 +398,9 @@
         if(data.proposal && data.proposal.id){
           const id = data.proposal.id;
           const ask = Number(data.proposal.ask_price);
-          // Garantia: enviar buy com preço do proposal
           send({ buy: id, price: ask });
+        } else {
+          els.posStatus.textContent = 'Falha ao receber proposta.';
         }
       }
 
@@ -425,19 +432,28 @@
         toast('Solicitado fechar posição.');
       }
 
-      // balance (atualiza campo)
+      // balance
       if(data.msg_type==='balance'){
         if(data.balance && typeof data.balance.balance !== 'undefined'){
           const bal = Number(data.balance.balance);
           els.balanceInput.value = `${bal.toFixed(2)} ${data.balance.currency || currency}`;
         }
-        // captura subscription id
         if(data.subscription && data.subscription.id && !balanceSubId){
           balanceSubId = data.subscription.id;
         }
       }
 
-      if(data.msg_type==='forget'){ /* ok */ }
+      // contracts_for -> habilita/desabilita UP/DOWN
+      if(data.msg_type==='contracts_for' && data.contracts_for){
+        const a = data.contracts_for.available || [];
+        const types = a.flatMap(x => (x.contract_type || []));
+        const hasMult = types.includes('MULTUP') || types.includes('MULTDOWN');
+        els.upBtn.disabled = !hasMult || !authorized;
+        els.downBtn.disabled = !hasMult || !authorized;
+        if(!hasMult){
+          els.posStatus.textContent = 'Este símbolo não suporta Multipliers. Escolha outro.';
+        }
+      }
     }
 
     // ------------- Fluxos API -------------
@@ -501,7 +517,6 @@
       const multiplier = Number(els.multInput.value||10); // x10 padrão
       if(!symbol || !amount){ els.posStatus.textContent='Preencha símbolo e stake'; return; }
 
-      // limit_order opcional
       const limit_order = {};
       const tp = Number(els.tpInput.value||0);
       const sl = Number(els.slInput.value||0);
@@ -515,7 +530,8 @@
         contract_type: direction==='up' ? 'MULTUP' : 'MULTDOWN',
         currency,
         symbol,
-        multiplier
+        multiplier,
+        product_type: 'multipliers' // <-- importante para Multipliers
       };
       if(Object.keys(limit_order).length) req.limit_order = limit_order;
       const dc = els.dcInput.value;
@@ -525,22 +541,14 @@
       send(req);
     }
 
-    // ======== GRÁFICO: criação e assinaturas ========
+    // ======== GRÁFICO ========
     function initChart(){
       if(lwChart || !els.chartWrap) return;
       lwChart = LightweightCharts.createChart(els.chartWrap, {
         autoSize: true,
-        layout: {
-          background: { type: 'solid', color: 'transparent' },
-          textColor: '#9fb0d0',
-        },
-        grid: {
-          vertLines: { color: '#1e2a46' },
-          horzLines: { color: '#1e2a46' },
-        },
-        crosshair: {
-          mode: LightweightCharts.CrosshairMode.Magnet,
-        },
+        layout: { background: { type: 'solid', color: 'transparent' }, textColor: '#9fb0d0' },
+        grid: { vertLines: { color: '#1e2a46' }, horzLines: { color: '#1e2a46' } },
+        crosshair: { mode: LightweightCharts.CrosshairMode.Magnet },
         rightPriceScale: { borderColor: '#1e2a46' },
         timeScale: { borderColor: '#1e2a46', timeVisible: true, secondsVisible: false },
       });
@@ -553,10 +561,7 @@
         borderVisible: false,
       });
 
-      // Ajuste responsivo
-      new ResizeObserver(() => {
-        lwChart.applyOptions({}); // autoSize cuida do resto
-      }).observe(els.chartWrap);
+      new ResizeObserver(() => { lwChart.applyOptions({}); }).observe(els.chartWrap);
     }
 
     function loadCandles(symbol, granularitySec){
@@ -564,16 +569,14 @@
       currentSymbol = symbol;
       currentGranularity = Number(granularitySec||60);
 
-      // Limpa série para indicar carregamento suave
       if(candleSeries) candleSeries.setData([]);
 
-      // Cancelar assinatura anterior de OHLC
       if(ohlcSubId){
         send({ forget: ohlcSubId });
         ohlcSubId = null;
       }
 
-      // 1) Histórico de candles
+      // Histórico
       send({
         ticks_history: symbol,
         adjust_start_time: 1,
@@ -583,7 +586,7 @@
         granularity: currentGranularity
       });
 
-      // 2) Stream de OHLC (atualizações em tempo real)
+      // Stream OHLC
       send({
         ohlc: 1,
         symbol,
@@ -591,7 +594,7 @@
         subscribe: 1
       });
 
-      // capturar o subscription id do OHLC
+      // captura subscription id do OHLC
       ws.addEventListener('message', function once(e){
         try{
           const d = JSON.parse(e.data);
@@ -602,7 +605,15 @@
         }catch(err){}
       });
     }
-    // =================================================
+
+    // Verifica se o símbolo suporta MULTUP/MULTDOWN
+    function checkMultipliersAvailability(symbol){
+      send({
+        contracts_for: symbol,
+        product_type: 'multipliers'
+      });
+    }
+    // ==========================
 
     // ------------- Eventos UI -------------
     els.loginBtn.onclick = ()=>{ window.location.href = OAUTH_URL; };
@@ -611,11 +622,10 @@
       if(ws && ws.readyState===1) ws.close();
       if(balanceSubId){ send({ forget: balanceSubId }); balanceSubId=null; }
       if(tickSubId){ send({ forget: tickSubId }); tickSubId=null; }
-      if(ohlcSubId){ send({ forget: ohlcSubId }); ohlcSubId=null; } // === NOVO: parar stream de OHLC
+      if(ohlcSubId){ send({ forget: ohlcSubId }); ohlcSubId=null; }
       clearTokens();
       selectedToken=null; loginId=null; setAuthUI(false);
       els.accountSelect.innerHTML = '';
-      // Limpa gráfico visualmente
       if(candleSeries) candleSeries.setData([]);
       toast('Sessão limpa.');
     };
@@ -629,7 +639,6 @@
       localStorage.setItem('POINT_SELECTED', JSON.stringify(chosen));
       if(ws && ws.readyState===1) authorize(chosen.token, chosen.account, chosen.currency);
       else connectWS();
-      // Atualiza saldo para a conta escolhida
       setTimeout(()=>{ subscribeBalance(); }, 200);
     };
 
@@ -638,12 +647,13 @@
     els.symbolSelect.onchange = (e)=>{
       const sym = e.target.value;
       subscribeTicks(sym);
-      loadCandles(sym, currentGranularity); // === NOVO: recarrega velas para novo símbolo
+      loadCandles(sym, currentGranularity);
+      checkMultipliersAvailability(sym);
     };
 
     els.tfSelect.onchange = (e)=>{
       const gran = Number(e.target.value||60);
-      loadCandles(els.symbolSelect.value, gran); // === NOVO: muda timeframe
+      loadCandles(els.symbolSelect.value, gran);
     };
 
     els.upBtn.onclick = ()=>placeMultiplier('up');
@@ -657,7 +667,6 @@
     extractTokensFromUrl();
     const tokens = getStoredTokens();
     if(tokens.length){
-      // popular seletor de contas
       els.accountSelect.innerHTML = '';
       tokens.forEach(t=>{
         const o=document.createElement('option');
@@ -666,15 +675,13 @@
       });
       els.accountSelect.disabled = false;
       els.useAccountBtn.disabled = false;
-      // conectar WS e autorizar na primeira conta por padrão
       connectWS();
       const first = tokens[0];
       localStorage.setItem('POINT_SELECTED', JSON.stringify(first));
       authorize(first.token, first.account, first.currency);
     } else {
-      // ainda sem OAuth -> conecta WS só para status
       connectWS();
-      initChart(); // deixa o gráfico pronto visualmente
+      initChart();
     }
   </script>
 </body>
