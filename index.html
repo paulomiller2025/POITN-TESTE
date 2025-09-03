@@ -225,11 +225,14 @@
     const APP_ID = 98640; // POINT
     const WS_URL = `wss://ws.derivws.com/websockets/v3?app_id=${APP_ID}`;
 
-    // OAuth: usa redirect_uri em http/https e faz fallback automático
+    // OAuth: usa redirect_uri em http/https e adiciona parâmetros obrigatórios
     const CAN_USE_REDIRECT = location.protocol === 'http:' || location.protocol === 'https:';
     const REDIRECT_URL = CAN_USE_REDIRECT ? (window.location.origin + window.location.pathname) : '';
-    const OAUTH_URL = `https://oauth.deriv.com/oauth2/authorize?app_id=${APP_ID}`
-      + (CAN_USE_REDIRECT ? `&redirect_uri=${encodeURIComponent(REDIRECT_URL)}` : '');
+    // Parâmetros essenciais: response_type=token e scope=read trade (+ brand=deriv para consistência)
+    const OAUTH_URL =
+      `https://oauth.deriv.com/oauth2/authorize?brand=deriv&app_id=${APP_ID}` +
+      `&response_type=token&scope=${encodeURIComponent('read trade')}` +
+      (CAN_USE_REDIRECT ? `&redirect_uri=${encodeURIComponent(REDIRECT_URL)}` : '');
 
     const DEFAULT_SYMBOL = '1HZ100V'; // Volatility 100 (1s)
     let CANDLE_GRANULARITY = 60; // padrão 1m
@@ -617,15 +620,13 @@
 
     // ------------- Eventos UI -------------
     els.loginBtn.onclick = () => {
-      // file:// não funciona para OAuth — avisa e continua (fallback sem redirect pode abrir a tela de login)
+      // Se estiver em file://, avisa — OAuth precisa de http/https
       if (!(location.protocol === 'http:' || location.protocol === 'https:')) {
         alert('Para conectar via OAuth, abra este arquivo usando http/https (ex.: Live Server no VSCode). O protocolo file:// bloqueia o OAuth.');
       }
-      try {
-        window.location.assign(OAUTH_URL);
-      } catch (e) {
-        window.location.href = OAUTH_URL;
-      }
+      // Redireciona de forma confiável
+      try { window.location.assign(OAUTH_URL); }
+      catch { window.location.href = OAUTH_URL; }
     };
 
     els.logoutBtn.onclick = ()=>{
