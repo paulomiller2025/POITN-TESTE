@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>POINT — Multipliers (Deriv)</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <!-- Gráfico (TradingView Lightweight Charts) -->
+  <!-- Gráfico (Lightweight Charts) -->
   <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
   <style>
     :root{ --bg:#0b1220;--card:#121a2b;--muted:#9fb0d0;--ok:#22c55e;--warn:#eab308;--err:#ef4444;--ink:#e6edf7;--soft:#1b2740 }
@@ -45,6 +45,7 @@
   <main class="max-w-[1800px] mx-auto px-6 py-6 space-y-5">
     <div id="uiAlert" class="hidden px-4 py-3 rounded-lg border text-sm"></div>
 
+    <!-- STATUS / CONTAS -->
     <section class="card p-4">
       <div class="flex flex-wrap items-center gap-4 justify-between">
         <div class="flex items-center gap-3">
@@ -59,6 +60,7 @@
           </div>
         </div>
 
+        <!-- Conta + Tipo + Saldo -->
         <div class="flex flex-wrap items-center gap-3">
           <label class="text-sm text-slate-300">Conta:</label>
           <select id="accountSelect" class="pill px-3 py-2 text-sm text-slate-200 bg-transparent min-w-[220px]" disabled></select>
@@ -69,7 +71,9 @@
       </div>
     </section>
 
+    <!-- ESQ | CENTRO | DIR -->
     <section class="layout-3">
+      <!-- ESQUERDA -->
       <div class="space-y-4">
         <div class="card p-4">
           <div class="text-xs uppercase tracking-wide text-slate-400 mb-2">Mercado</div>
@@ -93,6 +97,7 @@
         </div>
       </div>
 
+      <!-- CENTRO: GRÁFICO -->
       <div class="card p-4">
         <div class="flex items-center justify-between mb-3">
           <div class="text-xs uppercase tracking-wide text-slate-400">Gráfico de Velas</div>
@@ -125,6 +130,7 @@
         </div>
       </div>
 
+      <!-- DIREITA -->
       <div class="space-y-4">
         <div class="card p-4">
           <div class="text-xs uppercase tracking-wide text-slate-400 mb-2">Parâmetros</div>
@@ -238,14 +244,13 @@
     }
     function hideAlert(){ els.uiAlert.classList.add('hidden'); }
 
-    /* ---- Estado global ---- */
+    /* ---- Estado ---- */
     let ws=null, authorized=false, selectedToken=null, loginId=null, currency='USD';
     let tickSubId=null, candleSubId=null, openContractId=null, pocSubId=null, balanceSubId=null;
-
-    // <<< evita conflito de nomes "chart" >>>
     let lwChart=null, lwCandle=null, lwTick=null;
+    let authRetryTimer=null;
 
-    /* ---- Helpers UI ---- */
+    /* ---- UI ---- */
     function setConnectedUI(on){
       els.connStatus.textContent = on ? 'Conectado (WebSocket ativo)' : 'Desconectado';
     }
@@ -261,7 +266,7 @@
     function toast(msg,isErr=false){ (isErr?console.error:console.log)(msg); if(isErr) showAlert(msg,'err'); }
 
     /* ---- OAuth tokens ---- */
-    function parseTokensFromParams(qs){
+    function parseTokensFrom(qs){
       const p = new URLSearchParams(qs), out=[];
       for(let i=1;i<=10;i++){
         const tokenI=p.get(`token${i}`)||p.get(`access_token${i}`), acctI=p.get(`acct${i}`)||p.get(`loginid${i}`), curI=p.get(`cur${i}`)||p.get(`currency${i}`);
@@ -274,7 +279,7 @@
     function extractTokensFromUrl(){
       const q = location.search.startsWith('?')?location.search.slice(1):'';
       const h = location.hash.startsWith('#')?location.hash.slice(1):'';
-      const tokens=[...parseTokensFromParams(q),...parseTokensFromParams(h)];
+      const tokens=[...parseTokensFrom(q),...parseTokensFrom(h)];
       if(tokens.length){
         localStorage.setItem('POINT_TOKENS', JSON.stringify(tokens));
         history.replaceState({}, document.title, BASE_URL);
@@ -290,11 +295,10 @@
       ws = new WebSocket(WS_URL);
       ws.onopen = ()=>{
         setConnectedUI(true);
-        hideAlert();
         const tokens = getStoredTokens();
         if(tokens.length){
           const sel = JSON.parse(localStorage.getItem('POINT_SELECTED')||'null') || tokens[0];
-          authorize(sel.token, sel.account, sel.currency);
+          forceAuthorize(sel);
         } else {
           showAlert('Sem tokens salvos. Clique em Conectar.', 'info');
         }
@@ -305,9 +309,16 @@
     }
     function send(msg){ if(!ws || ws.readyState!==1){ toast('WS não conectado', true); return; } ws.send(JSON.stringify(msg)); }
 
+    function forceAuthorize(sel){
+      if(!sel || !sel.token){ showAlert('Token ausente após OAuth.', 'err'); return; }
+      authorize(sel.token, sel.account, sel.currency);
+      clearTimeout(authRetryTimer);
+      authRetryTimer = setTimeout(()=>{ if(!authorized) authorize(sel.token, sel.account, sel.currency); }, 2500);
+    }
+
     /* ---- Gráfico ---- */
     function initChart(){
-      if(!window.LightweightCharts) { showAlert('Falha ao carregar biblioteca do gráfico.', 'err'); return; }
+      if(!window.LightweightCharts){ showAlert('Falha ao carregar biblioteca do gráfico.', 'err'); return; }
       const container=document.getElementById('chart');
       lwChart = LightweightCharts.createChart(container, {
         layout:{background:{type:'solid',color:'#0b1220'},textColor:'#cbd5e1'},
@@ -335,20 +346,20 @@
       }
 
       if(data.msg_type==='authorize'){
+        clearTimeout(authRetryTimer);
         loginId = data.authorize.loginid;
         currency = data.authorize.currency || 'USD';
-        setAuthUI(true); hideAlert();
+        setAuthUI(true);
         updateAcctType(loginId);
 
-        // preencher conta visível (caso não esteja)
         if(!Array.from(els.accountSelect.options).some(o=>o.value===loginId)){
           const opt=document.createElement('option');
           opt.value=loginId; opt.textContent=`${loginId} • ${currency}`;
           els.accountSelect.appendChild(opt);
           els.accountSelect.disabled=false;
         }
-        const stored = JSON.parse(localStorage.getItem('POINT_SELECTED')||'{}');
-        if(!stored || !stored.account) localStorage.setItem('POINT_SELECTED', JSON.stringify({account:loginId, token:selectedToken, currency}));
+        const sel = JSON.parse(localStorage.getItem('POINT_SELECTED')||'{}');
+        if(!sel || !sel.account) localStorage.setItem('POINT_SELECTED', JSON.stringify({account:loginId, token:selectedToken, currency}));
 
         loadActiveSymbols();
         els.posStatus.textContent='Nenhuma posição aberta.';
@@ -373,21 +384,19 @@
 
       if(data.msg_type==='candles' && lwCandle){
         const arr=Array.isArray(data.candles)?data.candles:[data.candles];
-        const mapped=arr.map(c=>({time:Number(c.epoch),open:+c.open,high:+c.high,low:+c.low,close:+c.close}));
+        const mapped=arr.map(c=>({time:+c.epoch,open:+c.open,high:+c.high,low:+c.low,close:+c.close}));
         if(Array.isArray(data.candles)){ lwCandle.setData(mapped); lwChart && lwChart.timeScale().fitContent(); } else { lwCandle.update(mapped[0]); }
       }
 
-      if(data.msg_type==='proposal'){
-        if(data.proposal && data.proposal.id){ const id=data.proposal.id; const ask=Number(data.proposal.ask_price); send({buy:id, price:ask}); }
+      if(data.msg_type==='proposal' && data.proposal?.id){
+        const id=data.proposal.id; const ask=Number(data.proposal.ask_price); send({buy:id, price:ask});
       }
 
-      if(data.msg_type==='buy'){
-        if(data.buy && data.buy.contract_id){
-          openContractId=data.buy.contract_id;
-          els.posStatus.textContent=`Contrato #${openContractId} aberto. A acompanhar...`;
-          els.closeBtn.classList.remove('hidden');
-          subscribeOpenContract(openContractId);
-        }
+      if(data.msg_type==='buy' && data.buy?.contract_id){
+        openContractId=data.buy.contract_id;
+        els.posStatus.textContent=`Contrato #${openContractId} aberto. A acompanhar...`;
+        els.closeBtn.classList.remove('hidden');
+        subscribeOpenContract(openContractId);
       }
 
       if(data.msg_type==='proposal_open_contract'){
@@ -397,17 +406,17 @@
         if(poc.is_sold){ els.posStatus.textContent=`Contrato fechado. Resultado: ${pl.toFixed(2)} ${currency}`; cleanupPosition(); }
       }
 
-      if(data.msg_type==='sell'){ toast('Solicitado fechar posição.'); }
+      if(data.msg_type==='sell'){ console.log('Fechar posição enviado.'); }
 
       if(data.msg_type==='balance'){
         if(data.balance && typeof data.balance.balance!=='undefined'){
           els.balanceInput.value = `${Number(data.balance.balance).toFixed(2)} ${data.balance.currency || currency}`;
         }
-        if(data.subscription && data.subscription.id && !balanceSubId){ balanceSubId=data.subscription.id; }
+        if(data.subscription?.id && !balanceSubId){ balanceSubId=data.subscription.id; }
       }
     }
 
-    function updateAcctType(loginid){ if(!loginid){ els.acctType.textContent='—'; return; } els.acctType.textContent = /^VRTC/i.test(loginid) ? 'Conta Demo' : 'Conta Real'; }
+    function updateAcctType(loginid){ els.acctType.textContent = loginid ? (/^VRTC/i.test(loginid) ? 'Conta Demo' : 'Conta Real') : '—'; }
 
     /* ---- Fluxos API ---- */
     function authorize(token, acct, cur){ selectedToken=token; currency=(cur||'USD').toUpperCase(); send({authorize:token, passthrough:{acct}}); }
@@ -421,7 +430,7 @@
     }
     function subscribeCandles(symbol){
       if(candleSubId){ send({forget:candleSubId}); candleSubId=null; }
-      // >>> CORREÇÃO CRÍTICA: incluir end: "latest" para evitar "Input validation failed: end"
+      // >>> Fix: end:"latest" evita "Input validation failed: end"
       send({
         ticks_history:symbol,
         style:'candles',
@@ -445,7 +454,7 @@
     function cleanupPosition(){ openContractId=null; if(pocSubId){ send({forget:pocSubId}); pocSubId=null; } els.closeBtn.classList.add('hidden'); els.plVal.textContent='—'; }
 
     function placeMultiplier(direction){
-      if(!authorized) return toast('Autorize primeiro', true);
+      if(!authorized) return showAlert('Autorize primeiro.', 'err');
       const symbol=els.symbolSelect.value||DEFAULT_SYMBOL;
       const amount=Number(els.stakeInput.value||0);
       const multiplier=Number(els.multInput.value||10);
@@ -457,8 +466,8 @@
       els.posStatus.textContent='Enviando proposal...'; send(req);
     }
 
-    /* ---- Eventos UI ---- */
-    els.loginBtn.onclick = ()=>{ if(!CAN_USE_REDIRECT) alert('Abra em https (ex.: GitHub Pages).'); try{window.location.assign(OAUTH_URL);}catch{window.location.href=OAUTH_URL;} };
+    /* ---- Eventos ---- */
+    els.loginBtn.onclick = ()=>{ if(!CAN_USE_REDIRECT) alert('Abra em https (ex.: GitHub Pages).'); window.location.assign(OAUTH_URL); };
     els.logoutBtn.onclick = ()=>{
       cleanupPosition(); if(ws && ws.readyState===1) ws.close();
       if(balanceSubId){ send({forget:balanceSubId}); balanceSubId=null; }
@@ -489,10 +498,17 @@
       initChart();
       extractTokensFromUrl();
       const tokens=getStoredTokens();
+
+      // Popular seletor se já voltou com tokens
       els.accountSelect.innerHTML='';
       tokens.forEach(t=>{ if(t.account){ const o=document.createElement('option'); o.value=t.account; o.textContent=`${t.account} • ${t.currency}`; els.accountSelect.appendChild(o); } });
       if(els.accountSelect.options.length) els.accountSelect.disabled=false;
-      if(tokens.length){ const first=tokens[0]; localStorage.setItem('POINT_SELECTED', JSON.stringify(first)); if(first.account) updateAcctType(first.account); }
+
+      if(tokens.length){
+        const first=tokens[0];
+        localStorage.setItem('POINT_SELECTED', JSON.stringify(first));
+        if(first.account) updateAcctType(first.account);
+      }
       connectWS();
     })();
   </script>
