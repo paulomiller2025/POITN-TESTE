@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>POINT — Multipliers (Deriv)</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <!-- Lightweight Charts para velas -->
+  <!-- Lightweight Charts -->
   <script src="https://unpkg.com/lightweight-charts@4.1.0/dist/lightweight-charts.standalone.production.js"></script>
   <style>
     :root{
@@ -19,7 +19,7 @@
     .glass{backdrop-filter: blur(8px); background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06)}
     .grid-col{display:grid;grid-template-columns:1fr 1fr;gap:.75rem}
 
-    /* Layout novo: 3 colunas no desktop (esq/centro/dir) */
+    /* Layout 3 colunas: esquerda (Posição) / centro (Gráfico) / direita (Mercado + Ação) */
     .layout{
       display:grid;
       grid-template-columns: 260px 1fr 300px;
@@ -29,7 +29,7 @@
       .layout{ grid-template-columns: 1fr; }
     }
 
-    /* selects com texto preto ao clicar (seu ajuste) */
+    /* selects com texto preto ao focar (teu ajuste) */
     select:focus, select:active { color:#000 !important; }
     select option { color:#000; }
 
@@ -58,7 +58,7 @@
   </header>
 
   <main class="max-w-6xl mx-auto px-4 py-6 space-y-4">
-    <!-- STATUS / CONTAS (mantido em cima) -->
+    <!-- STATUS / CONTAS -->
     <section class="card rounded-2xl p-4">
       <div class="flex flex-wrap items-center gap-3 justify-between">
         <div class="flex items-center gap-3">
@@ -88,15 +88,43 @@
       </div>
     </section>
 
-    <!-- ======= LAYOUT NOVO: ESQ (Posição) | CENTRO (Gráfico) | DIR (Mercado + Ação) ======= -->
+    <!-- ======= LAYOUT: ESQ (Posição) | CENTRO (Gráfico) | DIR (Mercado + Ação) ======= -->
     <div class="layout">
       <!-- ESQUERDA: POSIÇÃO -->
       <section class="card rounded-2xl p-4">
         <div class="text-xs uppercase tracking-wide text-slate-400 mb-3">Posição</div>
-        <div class="space-y-3">
+
+        <!-- Box mercado fechado -->
+        <div id="closedBox" class="hidden space-y-2 text-sm">
+          <div class="text-rose-400 font-medium">Este mercado está fechado</div>
+          <div id="reopenLine" class="text-slate-300"></div>
+          <div class="text-slate-400">Por favor, volte a entrar</div>
+          <div id="reopenCountdown" class="text-slate-200 font-semibold text-lg">—</div>
+          <div class="text-slate-400 text-xs">Entretanto, experimente os Índices Synthetic (abertos 24/7)</div>
+          <hr class="border-slate-700 my-2"/>
+        </div>
+
+        <!-- Resumo dinâmico da posição / contrato aberto -->
+        <div id="posDetails" class="space-y-2 text-sm">
           <div id="posStatus" class="text-sm">Nenhuma posição aberta.</div>
-          <div class="flex items-center justify-between">
-            <div class="text-sm">P/L:</div>
+          <div class="grid grid-cols-2 gap-x-3 gap-y-1 mt-2">
+            <div class="text-slate-400">Ativo</div><div id="pd_asset" class="text-slate-200">—</div>
+            <div class="text-slate-400">Tipo</div><div id="pd_type" class="text-slate-200">Multipliers</div>
+            <div class="text-slate-400">Direção</div><div id="pd_dir" class="text-slate-200">—</div>
+            <div class="text-slate-400">Moeda</div><div id="pd_ccy" class="text-slate-200">—</div>
+
+            <div class="col-span-2 h-[1px] bg-slate-800 my-1"></div>
+
+            <div class="text-slate-400">Custos do contrato</div><div id="pd_cost" class="text-slate-200">—</div>
+            <div class="text-slate-400">Valor do contrato</div><div id="pd_value" class="text-slate-200">—</div>
+            <div class="text-slate-400">Taxa de cancelamento</div><div id="pd_cancel" class="text-slate-200">—</div>
+            <div class="text-slate-400">Entrada</div><div id="pd_entry" class="text-slate-200">—</div>
+            <div class="text-slate-400">Take profit</div><div id="pd_tp" class="text-slate-200">—</div>
+            <div class="text-slate-400">Stop loss</div><div id="pd_sl" class="text-slate-200">—</div>
+          </div>
+
+          <div class="flex items-center justify-between pt-2">
+            <div class="text-sm">Lucro/perda total:</div>
             <div class="text-sm font-semibold" id="plVal">—</div>
           </div>
           <button id="closeBtn" class="btn w-full px-3 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-sm hidden">Fechar posição</button>
@@ -111,14 +139,23 @@
             <label for="tfSelect" class="text-xs text-slate-400">Timeframe</label>
             <select id="tfSelect" class="pill px-2 py-1 rounded-lg text-sm bg-transparent text-slate-200" disabled>
               <option value="60" selected>1m</option>
+              <option value="120">2m</option>
+              <option value="180">3m</option>
               <option value="300">5m</option>
+              <option value="600">10m</option>
               <option value="900">15m</option>
+              <option value="1800">30m</option>
+              <option value="3600">1h</option>
+              <option value="7200">2h</option>
+              <option value="14400">4h</option>
+              <option value="28800">8h</option>
+              <option value="86400">1d</option>
             </select>
           </div>
         </div>
         <div id="chartWrap" class="glass rounded-xl"></div>
 
-        <!-- Seção de Preço (tempo real) fica OCULTA para não quebrar o JS -->
+        <!-- Preço em tempo real: oculto para não quebrar JS -->
         <div class="glass rounded-xl p-4 mt-3 hidden">
           <div id="tickSymbol" class="text-sm text-slate-400">—</div>
           <div class="text-3xl font-semibold mt-1" id="tickPrice">—</div>
@@ -130,10 +167,13 @@
       <div class="flex flex-col gap-3">
         <!-- MERCADO -->
         <section class="card rounded-2xl p-4">
-          <div class="text-xs uppercase tracking-wide text-slate-400 mb-3">Mercado</div>
+          <div class="text-xs uppercase tracking-wide text-slate-400 mb-3 flex items-center gap-2">
+            <span>Mercado</span>
+            <span id="marketStatus" class="text-rose-400 text-xs font-medium hidden">Fechado</span>
+          </div>
           <div class="space-y-3">
             <div>
-              <label class="text-sm text-slate-300">Símbolo (Volatility/Synthetic)</label>
+              <label class="text-sm text-slate-300">Símbolo</label>
               <div class="flex items-center gap-2">
                 <select id="symbolSelect" class="pill w-full px-3 py-2 rounded-xl text-sm bg-transparent text-slate-200" disabled>
                   <option>— carregando —</option>
@@ -144,20 +184,12 @@
             <div class="grid-col">
               <div>
                 <label class="text-sm text-slate-300">Stake</label>
-                <input id="stakeInput" type="number" min="1" step="1" value="5" class="pill w-full px-3 py-2 rounded-xl bg-transparent text-slate-200" disabled />
+                <input id="stakeInput" type="number" min="1" step="1" value="10" class="pill w-full px-3 py-2 rounded-xl bg-transparent text-slate-200" disabled />
               </div>
               <div>
                 <label class="text-sm text-slate-300">Multiplier</label>
                 <select id="multInput" class="pill w-full px-3 py-2 rounded-xl bg-transparent text-slate-200" disabled>
-                  <option value="10" selected>x10</option>
-                  <option value="50">x50</option>
-                  <option value="100">x100</option>
-                  <option value="200">x200</option>
-                  <option value="400">x400</option>
-                  <option value="800">x800</option>
-                  <option value="1000">x1000</option>
-                  <option value="1500">x1500</option>
-                  <option value="2000">x2000</option>
+                  <!-- opções preenchidas dinamicamente por símbolo -->
                 </select>
               </div>
             </div>
@@ -207,7 +239,7 @@
     const OAUTH_URL = `https://oauth.deriv.com/oauth2/authorize?app_id=${APP_ID}`;
     // ============================================
 
-    // Estado global simples
+    // Estado global
     let ws = null;
     let authorized = false;
     let selectedToken = null;
@@ -218,14 +250,21 @@
     let pocSubId = null;
     let balanceSubId = null;
 
-    // ==== ESTADO DO GRÁFICO ====
+    // Gráfico
     let lwChart = null;
     let candleSeries = null;
     let ohlcSubId = null;
     let currentSymbol = null;
     let currentGranularity = 60; // 1m
-    let liveBar = null; // {time, open, high, low, close}
-    // ============================
+    let liveBar = null;
+    let markers = [];
+
+    // controle de erros visuais (só mostrar quando for ação do usuário)
+    let lastUserActionAt = 0;
+
+    // countdown de reabertura
+    let reopenTimer = null;
+    let nextReopenEpoch = null;
 
     const els = {
       loginBtn: document.getElementById('loginBtn'),
@@ -253,9 +292,24 @@
       tfSelect: document.getElementById('tfSelect'),
       chartWrap: document.getElementById('chartWrap'),
       multBadge: document.getElementById('multBadge'),
+      marketStatus: document.getElementById('marketStatus'),
+      closedBox: document.getElementById('closedBox'),
+      reopenLine: document.getElementById('reopenLine'),
+      reopenCountdown: document.getElementById('reopenCountdown'),
+      // posição – detalhes
+      pd_asset: document.getElementById('pd_asset'),
+      pd_type: document.getElementById('pd_type'),
+      pd_dir : document.getElementById('pd_dir'),
+      pd_ccy : document.getElementById('pd_ccy'),
+      pd_cost: document.getElementById('pd_cost'),
+      pd_value: document.getElementById('pd_value'),
+      pd_cancel: document.getElementById('pd_cancel'),
+      pd_entry: document.getElementById('pd_entry'),
+      pd_tp: document.getElementById('pd_tp'),
+      pd_sl: document.getElementById('pd_sl'),
     };
 
-    // ------------- Helpers UI -------------
+    // Helpers UI
     function setConnectedUI(on){
       els.connStatus.textContent = on ? 'Conectado (WebSocket ativo)' : 'Desconectado';
     }
@@ -272,10 +326,14 @@
         : 'Clique em Conectar para iniciar o OAuth.';
       if(dis){ els.balanceInput.value = ''; els.balanceInput.placeholder = '—'; }
     }
-    function toast(msg,isErr=false){
+    function toast(msg,isErr=false,forceUI=false){
       console[isErr?'error':'log'](msg);
-      if(isErr) els.posStatus.textContent = `Erro: ${msg}`;
-      // Se for erro de multipliers com "Accepts ..." atualiza o select
+      // só coloca no painel se for um erro logo após uma ação do usuário OU se for forçado
+      const recentAction = (Date.now() - lastUserActionAt) < 4000;
+      if(isErr && (recentAction || forceUI)){
+        els.posStatus.textContent = `Erro: ${msg}`;
+      }
+      // Se erro inclui “Accepts …”, sincroniza multipliers
       if(isErr && /Accepts/i.test(String(msg))){
         const list = String(msg).split('Accepts')[1]?.replace(':','').trim();
         if(list){
@@ -298,15 +356,50 @@
     }
     function setMultiplierOptions(list){
       els.multInput.innerHTML = '';
-      list.forEach(v=>{
+      (list && list.length ? list : [10,50,100,200,400]).forEach(v=>{
         const o = document.createElement('option');
         o.value = String(v);
         o.textContent = 'x'+v;
         els.multInput.appendChild(o);
       });
     }
+    function showMarketClosedUI(isClosed, reopenEpoch=null, marketName=''){
+      els.marketStatus.classList.toggle('hidden', !isClosed);
+      els.closedBox.classList.toggle('hidden', !isClosed);
+      if(reopenTimer){ clearInterval(reopenTimer); reopenTimer=null; }
+      if(!isClosed){ els.reopenCountdown.textContent='—'; return; }
+      nextReopenEpoch = reopenEpoch||null;
 
-    // ------------- OAuth: captura tokens do redirect -------------
+      // linha “Reabrirá em …”
+      if(nextReopenEpoch){
+        const dt = new Date(nextReopenEpoch*1000);
+        const fmtDate = dt.toLocaleDateString('pt-PT', { weekday:'long', day:'2-digit', month:'short', year:'numeric', timeZone:'UTC' }).replace('.', '');
+        const hours = dt.getUTCHours();
+        const mins = dt.getUTCMinutes().toString().padStart(2,'0');
+        const ampm = hours<12 ? 'am' : 'pm';
+        const h12 = ((hours+11)%12+1);
+        els.reopenLine.textContent = `Reabrirá em ${h12}:${mins} ${ampm} (GMT) à ${fmtDate}`;
+      }else{
+        els.reopenLine.textContent = 'Reabrirá em breve';
+      }
+
+      // countdown
+      if(nextReopenEpoch){
+        const update = ()=>{
+          const now = Math.floor(Date.now()/1000);
+          let sec = nextReopenEpoch - now;
+          if(sec < 0) sec = 0;
+          const h = Math.floor(sec/3600);
+          const m = Math.floor((sec%3600)/60);
+          const s = sec%60;
+          els.reopenCountdown.textContent = `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+        };
+        update();
+        reopenTimer = setInterval(update, 1000);
+      }
+    }
+
+    // OAuth
     function extractTokensFromUrl(){
       const q = new URLSearchParams(location.search);
       const tokens = [];
@@ -329,7 +422,7 @@
       localStorage.removeItem('POINT_SELECTED');
     }
 
-    // ------------- WebSocket Core -------------
+    // WebSocket
     function connectWS(){
       if(ws && ws.readyState===1) return;
       ws = new WebSocket(WS_URL);
@@ -347,11 +440,11 @@
         setAuthUI(false);
       };
       ws.onmessage = handleMessage;
-      ws.onerror = ()=>toast('WebSocket error', true);
+      ws.onerror = ()=>toast('WebSocket error', true, false);
     }
 
     function send(msg){
-      if(!ws || ws.readyState!==1){ toast('WS não conectado', true); return; }
+      if(!ws || ws.readyState!==1){ toast('WS não conectado', true, true); return; }
       ws.send(JSON.stringify(msg));
     }
 
@@ -359,14 +452,15 @@
       const data = JSON.parse(evt.data);
 
       if(data.error){
-        toast(data.error.message || 'Erro desconhecido', true);
+        // Erros genéricos que não são de ação do usuário não poluem UI
+        toast(data.error.message || 'Erro desconhecido', true, false);
         return;
       }
 
-      // authorize
       if(data.msg_type==='authorize'){
         loginId = data.authorize.loginid;
         currency = data.authorize.currency || 'USD';
+        els.pd_ccy.textContent = currency;
         setAuthUI(true);
         initChart();
         loadActiveSymbols();
@@ -374,33 +468,55 @@
         subscribeBalance();
       }
 
-      // active_symbols -> popula select
+      // Active symbols => popula por grupos, sem (R_xx) no nome
       if(data.msg_type==='active_symbols'){
-        const syms = (data.active_symbols||[])
-          .filter(s=>s.market==='synthetic_index' || s.symbol.includes('R_') || s.symbol.includes('VOL') || s.market==='cryptocurrency')
-          .map(s=>({symbol:s.symbol, display:`${s.display_name} (${s.symbol})`}));
-        els.symbolSelect.innerHTML = '';
+        const syms = (data.active_symbols||[]).map(s=>({
+          symbol:s.symbol,
+          display:s.display_name, // sem código entre parênteses
+          market:s.market, submarket:s.submarket
+        }));
+
+        const groups = {
+          synthetic_index: {label:'Derived Synthetic', items:[]},
+          basket_index:    {label:'Baskets', items:[]},
+          cryptocurrency:  {label:'Criptomoedas', items:[]},
+          others:          {label:'Outros', items:[]}
+        };
         syms.forEach(s=>{
-          const o=document.createElement('option');
-          o.value = s.symbol; o.textContent = s.display;
-          els.symbolSelect.appendChild(o);
+          (groups[s.market] ? groups[s.market].items : groups.others.items).push(s);
         });
-        if(syms[0]) {
-          const firstSym = syms[0].symbol;
-          subscribeTicks(firstSym);
-          currentSymbol = firstSym;
+
+        els.symbolSelect.innerHTML = '';
+        Object.values(groups).forEach(g=>{
+          if(!g.items.length) return;
+          const og = document.createElement('optgroup');
+          og.label = g.label;
+          g.items.sort((a,b)=>a.display.localeCompare(b.display)).forEach(s=>{
+            const o=document.createElement('option');
+            o.value = s.symbol; o.textContent = s.display;
+            og.appendChild(o);
+          });
+          els.symbolSelect.appendChild(og);
+        });
+
+        const first = els.symbolSelect.querySelector('option');
+        if(first) {
+          els.symbolSelect.value = first.value;
+          currentSymbol = first.value;
+          subscribeTicks(currentSymbol);
           loadCandles(currentSymbol, currentGranularity);
           checkMultipliersAvailability(currentSymbol);
+          checkTradingTimes(currentSymbol);
+          els.pd_asset.textContent = first.textContent;
         }
       }
 
-      // tick (também atualiza intrabar)
+      // tick => intrabar
       if(data.msg_type==='tick' && data.tick){
         const q = Number(data.tick.quote);
         const epoch = Number(data.tick.epoch);
         const sym = data.tick.symbol;
 
-        // opcional: atualizar leitura (mesmo oculto)
         if(els.tickPrice){
           let s = q.toFixed(5);
           if(s.endsWith('00')) s = s.slice(0,-2);
@@ -454,8 +570,13 @@
       // proposal -> buy
       if(data.msg_type==='proposal'){
         if(data.proposal && data.proposal.id){
-          const id = data.proposal.id;
-          const ask = Number(data.proposal.ask_price);
+          const p = data.proposal;
+          // preencher detalhes
+          els.pd_value.textContent = `${Number(p.ask_price).toFixed(2)} ${currency}`;
+          els.pd_cost.textContent = (p.commission!=null) ? `${Number(p.commission).toFixed(2)} ${currency}` : '-';
+
+          const id = p.id;
+          const ask = Number(p.ask_price);
           send({ buy: id, price: ask });
         } else {
           els.posStatus.textContent = 'Falha ao receber proposta.';
@@ -472,13 +593,41 @@
         }
       }
 
-      // acompanhar contrato
+      // proposta de contrato em aberto (P/L + detalhes + marcador no gráfico)
       if(data.msg_type==='proposal_open_contract'){
         const poc = data.proposal_open_contract;
         if(!poc) return;
-        if(poc.contract_id) openContractId = poc.contract_id;
+
+        // direção / entrada / TP / SL
+        if(poc.contract_type){
+          const dir = poc.contract_type.includes('UP') ? 'Up' : 'Down';
+          const mult = els.multInput.value || '—';
+          els.pd_dir.textContent = `${dir} x${mult}`;
+        }
+        if(poc.buy_price!=null) els.pd_entry.textContent = `${Number(poc.buy_price).toFixed(2)} ${currency}`;
+        els.pd_tp.textContent = (poc.limit_order && poc.limit_order.take_profit) ? Number(poc.limit_order.take_profit).toFixed(2) : '-';
+        els.pd_sl.textContent = (poc.limit_order && poc.limit_order.stop_loss) ? Number(poc.limit_order.stop_loss).toFixed(2) : '-';
+        els.pd_cancel.textContent = poc.cancellation ? poc.cancellation : '-';
+
+        // P/L
         const pl = (poc.profit || 0);
         els.plVal.textContent = `${pl.toFixed(2)} ${currency}`;
+
+        // marcador no gráfico no momento da entrada
+        if(poc.entry_tick_time && poc.entry_tick){
+          const t = Number(poc.entry_tick_time);
+          const price = Number(poc.entry_tick);
+          const dirUp = poc.contract_type.includes('UP');
+          markers.push({
+            time: t,
+            position: dirUp ? 'belowBar' : 'aboveBar',
+            color: dirUp ? '#22c55e' : '#ef4444',
+            shape: 'arrowUp',
+            text: dirUp ? 'UP' : 'DOWN',
+          });
+          candleSeries.setMarkers(markers);
+        }
+
         if(poc.is_sold){
           els.posStatus.textContent = `Contrato fechado. Resultado: ${pl.toFixed(2)} ${currency}`;
           cleanupPosition();
@@ -487,7 +636,7 @@
 
       // sell enviado
       if(data.msg_type==='sell'){
-        toast('Solicitado fechar posição.');
+        // ok
       }
 
       // balance
@@ -501,7 +650,7 @@
         }
       }
 
-      // contracts_for -> habilita/desabilita, badge e multipliers dinâmicos
+      // contracts_for -> multipliers e disponibilidade
       if(data.msg_type==='contracts_for' && data.contracts_for){
         const a = data.contracts_for.available || [];
         const types = a.flatMap(x => (x.contract_type || []));
@@ -510,36 +659,43 @@
         els.downBtn.disabled = !hasMult || !authorized;
         setBadge(hasMult);
 
-        // tenta extrair lista de multipliers suportados
         let allowed = [];
         for(const item of a){
           if(item.contract_type && (item.contract_type.includes('MULTUP') || item.contract_type.includes('MULTDOWN'))){
-            // heurísticas de campos comuns
-            if(Array.isArray(item.multipliers)) allowed = item.multipliers;
-            if(item.multiplier_range && Array.isArray(item.multiplier_range.list)) allowed = item.multiplier_range.list;
-            if(item.available_multipliers && Array.isArray(item.available_multipliers)) allowed = item.available_multipliers;
+            if(Array.isArray(item.available_multipliers)) allowed = allowed.concat(item.available_multipliers);
+            if(item.multiplier_range && Array.isArray(item.multiplier_range.list)) allowed = allowed.concat(item.multiplier_range.list);
+            if(Array.isArray(item.multipliers)) allowed = allowed.concat(item.multipliers);
           }
         }
         if(allowed.length){
           allowed = [...new Set(allowed.map(Number).filter(Boolean))].sort((x,y)=>x-y);
           setMultiplierOptions(allowed);
         }
+      }
 
-        if(!hasMult){
-          els.posStatus.textContent = 'Este símbolo não suporta Multipliers. Escolha outro.';
+      // trading_times -> estado de mercado
+      if(data.msg_type==='trading_times' && data.trading_times){
+        const info = findSymbolTradingInfo(data.trading_times, currentSymbol);
+        if(info){
+          const isOpen = info.is_open;
+          const next = info.next_open_time ? Number(info.next_open_time) : null;
+          showMarketClosedUI(!isOpen, next);
+          els.upBtn.disabled = !isOpen || els.upBtn.disabled;
+          els.downBtn.disabled = !isOpen || els.downBtn.disabled;
         }
       }
     }
 
-    // ------------- Fluxos API -------------
+    // API
     function authorize(token, acct, cur){
       selectedToken = token;
       currency = (cur||'USD').toUpperCase();
+      els.pd_ccy.textContent = currency;
       send({ authorize: token, passthrough:{acct} });
     }
 
     function loadActiveSymbols(){
-      send({ active_symbols: 'brief', product_type: 'basic' });
+      send({ active_symbols: 'full' }); // full para obter market/submarket/nomes
     }
 
     function subscribeTicks(symbol){
@@ -586,11 +742,11 @@
     }
 
     function placeMultiplier(direction){
-      if(!authorized) return toast('Autorize primeiro', true);
+      if(!authorized) return toast('Autorize primeiro', true, true);
       const symbol = els.symbolSelect.value;
       const amount = Number(els.stakeInput.value||0);
-      const multiplier = Number(els.multInput.value||10);
-      if(!symbol || !amount){ els.posStatus.textContent='Preencha símbolo e stake'; return; }
+      const multiplier = Number(els.multInput.value||0);
+      if(!symbol || !amount || !multiplier){ els.posStatus.textContent='Preencha símbolo, stake e multiplier'; return; }
 
       const limit_order = {};
       const tp = Number(els.tpInput.value||0);
@@ -606,12 +762,21 @@
         currency,
         symbol,
         multiplier
-        // não enviar product_type aqui
+        // NÃO enviar product_type aqui
       };
       if(Object.keys(limit_order).length) req.limit_order = limit_order;
       const dc = els.dcInput.value;
       if(dc) req.cancellation = dc;
 
+      // preencher dados fixos do painel
+      els.pd_asset.textContent = els.symbolSelect.selectedOptions[0]?.textContent || symbol;
+      els.pd_dir.textContent = `${direction==='up'?'Up':'Down'} x${multiplier}`;
+      els.pd_entry.textContent = `${amount.toFixed(2)} ${currency}`;
+      els.pd_tp.textContent = tp>0 ? tp.toFixed(2) : '-';
+      els.pd_sl.textContent = sl>0 ? sl.toFixed(2) : '-';
+      els.pd_cancel.textContent = dc ? dc : '-';
+
+      lastUserActionAt = Date.now();
       els.posStatus.textContent = 'Enviando proposal...';
       send(req);
     }
@@ -629,7 +794,7 @@
           borderColor: '#1e2a46',
           timeVisible: true,
           secondsVisible: false,
-          rightOffset: 3,          // folga à direita (estilo Deriv)
+          rightOffset: 3, // folga à direita
           fixRightEdge: false,
           fixLeftEdge: false
         },
@@ -643,7 +808,6 @@
         borderVisible: false,
       });
 
-      // Responsivo
       new ResizeObserver(() => { lwChart.applyOptions({}); }).observe(els.chartWrap);
     }
 
@@ -653,7 +817,10 @@
       currentGranularity = Number(granularitySec||60);
 
       liveBar = null;
-      if(candleSeries) candleSeries.setData([]);
+      if(candleSeries) {
+        candleSeries.setData([]);
+        candleSeries.setMarkers(markers); // preserva marcadores antigos
+      }
 
       if(ohlcSubId){
         send({ forget: ohlcSubId });
@@ -690,18 +857,59 @@
       });
     }
 
-    // Verifica suporte e tenta obter lista de multipliers
+    // ======== MERCADO ========
     function checkMultipliersAvailability(symbol){
-      send({
-        contracts_for: symbol,
-        product_type: 'multipliers'
-      });
+      // Sem product_type para evitar erros de validação em algumas contas/rotas
+      send({ contracts_for: symbol });
     }
-    // ==========================
 
-    // ------------- Eventos UI -------------
-    els.loginBtn.onclick = ()=>{ window.location.href = OAUTH_URL; };
-    els.logoutBtn.onclick = ()=>{
+    function checkTradingTimes(symbol){
+      // Consulta horários de trading do dia (para “Fechado/Reabrirá”)
+      const todayUTC = new Date().toISOString().slice(0,10);
+      send({ trading_times: todayUTC, passthrough: { for_symbol: symbol } });
+    }
+
+    function findSymbolTradingInfo(trading_times_payload, symbol){
+      const tt = trading_times_payload.trading_times || trading_times_payload;
+      const mkts = (tt.markets||[]);
+      for(const m of mkts){
+        for(const sm of (m.submarkets||[])){
+          for(const s of (sm.symbols||[])){
+            if(s.symbol === symbol){
+              // is_open geralmente vem de website_status/trading_status; nem sempre aqui.
+              // Alguns payloads têm "times.open" e "times.close": inferimos próxima abertura.
+              const now = Math.floor(Date.now()/1000);
+              let is_open = true;
+              let next_open_time = null;
+
+              if(s.times && Array.isArray(s.times.open) && Array.isArray(s.times.close)){
+                // Se houver pares open/close do dia, inferimos
+                is_open = false;
+                for(let i=0;i<s.times.open.length;i++){
+                  const o = Number(s.times.open[i]);
+                  const c = Number(s.times.close[i]);
+                  if(now>=o && now<c){ is_open = true; break; }
+                  if(now < o){ next_open_time = next_open_time ? Math.min(next_open_time,o) : o; }
+                }
+              }
+
+              // Alguns símbolos (Synthetic) estão sempre abertos: se não houver times, consideramos abertos
+              if(!s.times || (!s.times.open || !s.times.open.length)){
+                is_open = true;
+              }
+
+              return { is_open, next_open_time };
+            }
+          }
+        }
+      }
+      return null;
+    }
+    // =======================================
+
+    // Eventos UI
+    document.getElementById('loginBtn').onclick = ()=>{ window.location.href = OAUTH_URL; };
+    document.getElementById('logoutBtn').onclick = ()=>{
       cleanupPosition();
       if(ws && ws.readyState===1) ws.close();
       if(balanceSubId){ send({ forget: balanceSubId }); balanceSubId=null; }
@@ -711,7 +919,6 @@
       selectedToken=null; loginId=null; setAuthUI(false);
       els.accountSelect.innerHTML = '';
       if(candleSeries) candleSeries.setData([]);
-      toast('Sessão limpa.');
     };
 
     els.useAccountBtn.onclick = ()=>{
@@ -726,13 +933,17 @@
       setTimeout(()=>{ subscribeBalance(); }, 200);
     };
 
-    els.refreshBalanceBtn.onclick = ()=> requestBalanceOnce();
+    els.refreshBalanceBtn.onclick = ()=> send({ balance: 1 });
 
     els.symbolSelect.onchange = (e)=>{
       const sym = e.target.value;
+      currentSymbol = sym;
+      const name = e.target.selectedOptions[0]?.textContent || sym;
+      els.pd_asset.textContent = name;
       subscribeTicks(sym);
       loadCandles(sym, currentGranularity);
       checkMultipliersAvailability(sym);
+      checkTradingTimes(sym);
     };
 
     els.tfSelect.onchange = (e)=>{
@@ -740,14 +951,15 @@
       loadCandles(els.symbolSelect.value, gran);
     };
 
-    els.upBtn.onclick = ()=>placeMultiplier('up');
-    els.downBtn.onclick = ()=>placeMultiplier('down');
+    els.upBtn.onclick = ()=>{ lastUserActionAt=Date.now(); placeMultiplier('up'); };
+    els.downBtn.onclick = ()=>{ lastUserActionAt=Date.now(); placeMultiplier('down'); };
     els.closeBtn.onclick = ()=>{
       if(!openContractId) return;
+      lastUserActionAt=Date.now();
       send({ sell: openContractId, price: 0 });
     };
 
-    // ------------- Inicialização -------------
+    // Inicialização
     extractTokensFromUrl();
     const tokens = getStoredTokens();
     if(tokens.length){
