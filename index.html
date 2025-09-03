@@ -38,14 +38,14 @@
       .layout-3 { grid-template-columns: 1fr; }
     }
 
-    /* Altura do gráfico (mais largo/alto) */
+    /* Altura do gráfico (mais alto) */
     #chartWrap{ height: 560px; }
     #chart{ width:100%; height:100%; }
   </style>
 </head>
 <body>
   <header class="sticky top-0 z-50 border-b border-slate-800 bg-[color:var(--soft)]">
-    <div class="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
+    <div class="max-w-[1600px] mx-auto px-4 py-4 flex items-center justify-between">
       <div class="flex items-center gap-3">
         <div class="w-9 h-9 rounded-xl bg-indigo-500/20 flex items-center justify-center">
           <span class="text-indigo-300 font-bold">P</span>
@@ -62,10 +62,10 @@
     </div>
   </header>
 
-  <main class="max-w-7xl mx-auto px-4 py-6 space-y-4">
+  <main class="max-w-[1600px] mx-auto px-4 py-6 space-y-4">
     <!-- STATUS / CONTAS -->
     <section class="card rounded-2xl p-4">
-      <div class="flex flex-wrap items-center gap-3 justify-between">
+      <div class="flex flex-wrap items-center gap-4 justify-between">
         <div class="flex items-center gap-3">
           <div class="w-10 h-10 rounded-2xl bg-emerald-500/15 flex items-center justify-center">
             <span class="text-emerald-300">●</span>
@@ -78,15 +78,17 @@
           </div>
         </div>
 
-        <div class="flex flex-col gap-2">
-          <div class="flex items-center gap-3">
-            <label class="text-sm text-slate-300">Conta:</label>
-            <select id="accountSelect" class="pill px-3 py-2 rounded-xl text-sm text-slate-200 bg-transparent" disabled></select>
-          </div>
-          <div class="flex items-center gap-3">
-            <label class="text-sm text-slate-300">Saldo:</label>
-            <input id="balanceInput" class="pill px-3 py-2 rounded-xl text-sm bg-transparent text-slate-200 w-44 text-right" placeholder="—" disabled />
-          </div>
+        <!-- LINHA ÚNICA: Conta + Tipo + Saldo -->
+        <div class="flex flex-wrap items-center gap-3">
+          <label class="text-sm text-slate-300">Conta:</label>
+          <select id="accountSelect" class="pill px-3 py-2 rounded-xl text-sm text-slate-200 bg-transparent" disabled></select>
+
+          <span id="acctType" class="text-xs px-2 py-1 rounded-md bg-white/10 border border-white/10 text-slate-200">
+            —
+          </span>
+
+          <label class="text-sm text-slate-300">Saldo:</label>
+          <input id="balanceInput" class="pill px-3 py-2 rounded-xl text-sm bg-transparent text-slate-200 w-44 text-right" placeholder="—" disabled />
         </div>
       </div>
     </section>
@@ -104,16 +106,6 @@
               <select id="symbolSelect" class="pill w-full px-3 py-2 rounded-xl text-sm bg-transparent text-slate-200" disabled>
                 <option>— carregando —</option>
               </select>
-            </div>
-
-            <div class="glass rounded-xl p-3">
-              <div class="flex items-baseline justify-between">
-                <div>
-                  <div id="tickSymbol" class="text-xs text-slate-400">—</div>
-                  <div class="text-2xl font-semibold mt-1" id="tickPrice">—</div>
-                </div>
-                <div class="text-xs text-slate-500" id="tickNote">Assina ticks ao escolher o símbolo.</div>
-              </div>
             </div>
           </div>
         </div>
@@ -149,7 +141,15 @@
               <option value="28800">8h</option>
               <option value="86400">1d</option>
             </select>
-            <div class="text-xs text-slate-400" id="chartInfo">1m candles • stream</div>
+
+            <!-- Botões de zoom -->
+            <div class="flex items-center gap-1 ml-2">
+              <button id="zoomInBtn" class="btn px-2 py-1 rounded-md border border-white/10 text-xs">+</button>
+              <button id="zoomOutBtn" class="btn px-2 py-1 rounded-md border border-white/10 text-xs">−</button>
+              <button id="zoomFitBtn" class="btn px-2 py-1 rounded-md border border-white/10 text-xs">Fit</button>
+            </div>
+
+            <div class="text-xs text-slate-400 ml-2" id="chartInfo">1m candles • stream</div>
           </div>
         </div>
         <div id="chartWrap" class="rounded-xl overflow-hidden">
@@ -226,7 +226,8 @@
     // ================== CONFIG ==================
     const APP_ID = 98640; // POINT
     const WS_URL = `wss://ws.derivws.com/websockets/v3?app_id=${APP_ID}`;
-    const OAUTH_URL = `https://oauth.deriv.com/oauth2/authorize?app_id=${APP_ID}`;
+    const REDIRECT_URL = window.location.origin + window.location.pathname; // para OAuth
+    const OAUTH_URL = `https://oauth.deriv.com/oauth2/authorize?app_id=${APP_ID}&redirect_uri=${encodeURIComponent(REDIRECT_URL)}`;
     const DEFAULT_SYMBOL = '1HZ100V'; // Volatility 100 (1s)
     let CANDLE_GRANULARITY = 60; // padrão 1m
     // ============================================
@@ -257,15 +258,13 @@
       dcInput: document.getElementById('dcInput'),
       upBtn: document.getElementById('upBtn'),
       downBtn: document.getElementById('downBtn'),
-      tickSymbol: document.getElementById('tickSymbol'),
-      tickPrice: document.getElementById('tickPrice'),
-      tickNote: document.getElementById('tickNote'),
       posStatus: document.getElementById('posStatus'),
       plVal: document.getElementById('plVal'),
       closeBtn: document.getElementById('closeBtn'),
       balanceInput: document.getElementById('balanceInput'),
       chartInfo: document.getElementById('chartInfo'),
       timeframeSelect: document.getElementById('timeframeSelect'),
+      acctType: document.getElementById('acctType'),
     };
 
     // === Chart (Lightweight Charts) ===
@@ -276,12 +275,16 @@
       crosshair: { mode: 0 },
       rightPriceScale: { borderColor: '#334155' },
       timeScale: { borderColor: '#334155' },
+      handleScroll: true,
+      handleScale: true,
     });
     const candleSeries = chart.addCandlestickSeries({
       upColor: '#22c55e', downColor: '#ef4444',
       borderDownColor: '#ef4444', borderUpColor: '#22c55e',
       wickDownColor: '#ef4444', wickUpColor: '#22c55e',
     });
+    // Série para ticks (linha sobre o gráfico)
+    const tickSeries = chart.addLineSeries({ lineWidth: 1.5 });
 
     function resizeChart(){
       const wrap = document.getElementById('chartWrap');
@@ -305,7 +308,7 @@
       els.loginNote.textContent = on
         ? 'Autorizado. Escolhe a conta e o símbolo para negociar.'
         : 'Clique em Conectar para iniciar o OAuth.';
-      if(dis){ els.balanceInput.value = ''; els.balanceInput.placeholder = '—'; }
+      if(dis){ els.balanceInput.value = ''; els.balanceInput.placeholder = '—'; els.acctType.textContent='—'; }
     }
     function toast(msg,isErr=false){ console[isErr?'error':'log'](msg); }
 
@@ -373,6 +376,7 @@
         loginId = data.authorize.loginid;
         currency = data.authorize.currency || 'USD';
         setAuthUI(true);
+        updateAcctType(loginId);
         loadActiveSymbols();
         els.posStatus.textContent = 'Nenhuma posição aberta.';
         subscribeBalance(); // saldo ao autorizar
@@ -393,17 +397,17 @@
         const hasDefault = syms.find(s=>s.symbol===DEFAULT_SYMBOL);
         els.symbolSelect.value = hasDefault ? DEFAULT_SYMBOL : (syms[0]?.symbol||'');
         if(els.symbolSelect.value){
-          subscribeTicks(els.symbolSelect.value);
           subscribeCandles(els.symbolSelect.value);
+          subscribeTicks(els.symbolSelect.value);
         }
       }
 
-      // ticks (sem dois zeros finais)
+      // ticks -> linha no gráfico
       if(data.msg_type==='tick'){
         const q = Number(data.tick.quote);
-        let s = q.toFixed(5);
-        if(s.endsWith('00')) s = s.slice(0,-2);
-        els.tickPrice.textContent = s;
+        // opcional: remover dois zeros finais na label de preço (não exibimos fora do gráfico)
+        // atualiza linha de ticks
+        tickSeries.update({ time: Number(data.tick.epoch), value: q });
       }
 
       // candles stream
@@ -470,6 +474,13 @@
       }
     }
 
+    function updateAcctType(loginid){
+      if(!loginid){ els.acctType.textContent='—'; return; }
+      // CR... = real; VRTC... = demo
+      const isDemo = /^VRTC/i.test(loginid) || /VRTC/i.test((localStorage.getItem('POINT_SELECTED')||'')); 
+      els.acctType.textContent = isDemo ? 'Conta Demo' : 'Conta Real';
+    }
+
     // ------------- Fluxos API -------------
     function authorize(token, acct, cur){
       selectedToken = token;
@@ -486,15 +497,14 @@
         els.symbolSelect.value = DEFAULT_SYMBOL;
       }
       if(els.symbolSelect.value){
-        subscribeTicks(els.symbolSelect.value);
         subscribeCandles(els.symbolSelect.value);
+        subscribeTicks(els.symbolSelect.value);
       }
     }
 
     function subscribeTicks(symbol){
       if(tickSubId){ send({ forget: tickSubId }); tickSubId=null; }
-      els.tickSymbol.textContent = symbol;
-      els.tickNote.textContent = 'Recebendo ticks...';
+      tickSeries.setData([]); // limpa linha
       send({ ticks: symbol, subscribe: 1 });
       ws.addEventListener('message', function once(e){
         try{
@@ -607,10 +617,11 @@
       selectedToken=null; loginId=null; setAuthUI(false);
       els.accountSelect.innerHTML = '';
       candleSeries.setData([]);
+      tickSeries.setData([]);
       toast('Sessão limpa.');
     };
 
-    // Troca de conta -> autoriza imediatamente e saldo atualiza automaticamente
+    // Troca de conta -> autoriza e atualiza saldo
     els.accountSelect.onchange = ()=>{
       const opt = els.accountSelect.value;
       if(!opt) return;
@@ -618,31 +629,38 @@
       const chosen = tokens.find(t=>t.account===opt);
       if(!chosen) return;
       localStorage.setItem('POINT_SELECTED', JSON.stringify(chosen));
+      updateAcctType(opt);
       if(ws && ws.readyState===1) authorize(chosen.token, chosen.account, chosen.currency);
       else connectWS();
       setTimeout(()=>{ subscribeBalance(); requestBalanceOnce(); }, 200);
     };
 
-    // Símbolo mudou -> re-assinar ticks e velas
+    // Símbolo mudou -> re-assinar candles e ticks
     els.symbolSelect.onchange = (e)=>{
       const sym = e.target.value;
       if(!sym) return;
-      subscribeTicks(sym);
       subscribeCandles(sym);
+      subscribeTicks(sym);
     };
 
-    // Troca de timeframe -> resubscreve velas mantendo símbolo atual
+    // Timeframe
     els.timeframeSelect.onchange = (e)=>{
       CANDLE_GRANULARITY = Number(e.target.value || 60);
       const sym = els.symbolSelect.value || DEFAULT_SYMBOL;
       if(sym){ subscribeCandles(sym); }
     };
 
-    els.upBtn.onclick = ()=>placeMultiplier('up');
-    els.downBtn.onclick = ()=>placeMultiplier('down');
-    els.closeBtn.onclick = ()=>{
-      if(!openContractId) return;
-      send({ sell: openContractId, price: 0 });
+    // Zoom botões
+    document.getElementById('zoomInBtn').onclick = ()=>{
+      const s = chart.timeScale().getBarSpacing();
+      chart.timeScale().setBarSpacing(s * 0.8);
+    };
+    document.getElementById('zoomOutBtn').onclick = ()=>{
+      const s = chart.timeScale().getBarSpacing();
+      chart.timeScale().setBarSpacing(s * 1.25);
+    };
+    document.getElementById('zoomFitBtn').onclick = ()=>{
+      chart.timeScale().fitContent();
     };
 
     // ------------- Inicialização -------------
@@ -650,7 +668,6 @@
       extractTokensFromUrl();
       const tokens = getStoredTokens();
       if(tokens.length){
-        // popular seletor de contas
         els.accountSelect.innerHTML = '';
         tokens.forEach(t=>{
           const o=document.createElement('option');
@@ -661,10 +678,11 @@
 
         const first = tokens[0];
         localStorage.setItem('POINT_SELECTED', JSON.stringify(first));
+        updateAcctType(first.account);
         connectWS();
         authorize(first.token, first.account, first.currency);
       } else {
-        connectWS(); // mantém WS para quando voltar do OAuth
+        connectWS();
       }
     }
 
