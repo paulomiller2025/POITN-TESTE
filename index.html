@@ -17,6 +17,10 @@
     .glass{backdrop-filter: blur(8px); background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06)}
     .grid-col{display:grid;grid-template-columns:1fr 1fr;gap:.75rem}
     @media (min-width:1024px){.grid-col-3{grid-template-columns:repeat(3,1fr)}}
+
+    /* === Ajuste solicitado: selects com texto preto ao clicar === */
+    select:focus, select:active { color:#000 !important; }
+    select option { color:#000; }
   </style>
 </head>
 <body>
@@ -53,10 +57,19 @@
             </div>
           </div>
         </div>
-        <div class="flex items-center gap-3">
-          <label class="text-sm text-slate-300">Conta:</label>
-          <select id="accountSelect" class="pill px-3 py-2 rounded-xl text-sm text-slate-200 bg-transparent" disabled></select>
-          <button id="useAccountBtn" class="btn px-3 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-sm disabled:opacity-50" disabled>Usar conta</button>
+
+        <div class="flex flex-col gap-2">
+          <div class="flex items-center gap-3">
+            <label class="text-sm text-slate-300">Conta:</label>
+            <select id="accountSelect" class="pill px-3 py-2 rounded-xl text-sm text-slate-200 bg-transparent" disabled></select>
+            <button id="useAccountBtn" class="btn px-3 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-sm disabled:opacity-50" disabled>Usar conta</button>
+          </div>
+          <!-- === Formulário de Saldo (por conta selecionada) === -->
+          <div class="flex items-center gap-3">
+            <label class="text-sm text-slate-300">Saldo:</label>
+            <input id="balanceInput" class="pill px-3 py-2 rounded-xl text-sm bg-transparent text-slate-200 w-40 text-right" placeholder="—" disabled />
+            <button id="refreshBalanceBtn" class="btn px-3 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-sm disabled:opacity-50" disabled>Atualizar</button>
+          </div>
         </div>
       </div>
     </section>
@@ -80,8 +93,9 @@
             <div>
               <label class="text-sm text-slate-300">Multiplier</label>
               <select id="multInput" class="pill w-full px-3 py-2 rounded-xl bg-transparent text-slate-200" disabled>
+                <option value="10" selected>x10</option>
                 <option value="50">x50</option>
-                <option value="100" selected>x100</option>
+                <option value="100">x100</option>
                 <option value="200">x200</option>
                 <option value="400">x400</option>
                 <option value="800">x800</option>
@@ -167,6 +181,7 @@
     let tickSubId = null;
     let openContractId = null;
     let pocSubId = null;
+    let balanceSubId = null;
 
     const els = {
       loginBtn: document.getElementById('loginBtn'),
@@ -189,6 +204,8 @@
       posStatus: document.getElementById('posStatus'),
       plVal: document.getElementById('plVal'),
       closeBtn: document.getElementById('closeBtn'),
+      balanceInput: document.getElementById('balanceInput'),
+      refreshBalanceBtn: document.getElementById('refreshBalanceBtn'),
     };
 
     // ------------- Helpers UI -------------
@@ -198,7 +215,7 @@
     function setAuthUI(on){
       authorized = !!on;
       const dis = !on;
-      [els.accountSelect, els.useAccountBtn, els.symbolSelect, els.stakeInput, els.multInput, els.tpInput, els.slInput, els.dcInput, els.upBtn, els.downBtn].forEach(el=>{
+      [els.accountSelect, els.useAccountBtn, els.symbolSelect, els.stakeInput, els.multInput, els.tpInput, els.slInput, els.dcInput, els.upBtn, els.downBtn, els.refreshBalanceBtn].forEach(el=>{
         el.disabled = dis;
       });
       els.logoutBtn.classList.toggle('hidden', !on);
@@ -206,6 +223,7 @@
       els.loginNote.textContent = on
         ? 'Autorizado. Escolhe a conta e o símbolo para negociar.'
         : 'Clique em Conectar para iniciar o OAuth.';
+      if(dis){ els.balanceInput.value = ''; els.balanceInput.placeholder = '—'; }
     }
     function toast(msg,isErr=false){
       console[isErr?'error':'log'](msg);
@@ -233,6 +251,7 @@
     }
     function clearTokens(){
       localStorage.removeItem('POINT_TOKENS');
+      localStorage.removeItem('POINT_SELECTED');
     }
 
     // ------------- WebSocket Core -------------
@@ -277,6 +296,7 @@
         setAuthUI(true);
         loadActiveSymbols();
         els.posStatus.textContent = 'Nenhuma posição aberta.';
+        subscribeBalance(); // saldo ao autorizar
       }
 
       // active_symbols -> popula select
@@ -294,21 +314,26 @@
         if(syms[0]) subscribeTicks(syms[0].symbol);
       }
 
-      // ticks
+      // ticks (formatação pedida: remover 2 zeros finais)
       if(data.msg_type==='tick'){
-        els.tickPrice.textContent = data.tick.quote.toFixed(5);
+        const q = Number(data.tick.quote);
+        let s = q.toFixed(5);
+        if(s.endsWith('00')) s = s.slice(0,-2); // remove sempre dois zeros finais, se existirem
+        els.tickPrice.textContent = s;
       }
 
+      // proposal -> buy
       if(data.msg_type==='proposal'){
-        // Depois do proposal, chamamos buy automaticamente
         if(data.proposal && data.proposal.id){
           const id = data.proposal.id;
-          send({ buy: id, price: data.proposal.ask_price });
+          const ask = Number(data.proposal.ask_price);
+          // Garantia: enviar buy com preço do proposal
+          send({ buy: id, price: ask });
         }
       }
 
+      // buy -> contrato aberto
       if(data.msg_type==='buy'){
-        // Contrato comprado
         if(data.buy && data.buy.contract_id){
           openContractId = data.buy.contract_id;
           els.posStatus.textContent = `Contrato #${openContractId} aberto. A acompanhar...`;
@@ -317,27 +342,37 @@
         }
       }
 
+      // acompanhar contrato
       if(data.msg_type==='proposal_open_contract'){
         const poc = data.proposal_open_contract;
         if(!poc) return;
         if(poc.contract_id) openContractId = poc.contract_id;
         const pl = (poc.profit || 0);
         els.plVal.textContent = `${pl.toFixed(2)} ${currency}`;
-        // fechado?
         if(poc.is_sold){
           els.posStatus.textContent = `Contrato fechado. Resultado: ${pl.toFixed(2)} ${currency}`;
           cleanupPosition();
         }
       }
 
+      // sell enviado
       if(data.msg_type==='sell'){
-        // pedido de fechar enviado; aguarda poc is_sold
         toast('Solicitado fechar posição.');
       }
 
-      if(data.msg_type==='forget'){
-        // ok
+      // balance (atualiza campo)
+      if(data.msg_type==='balance'){
+        if(data.balance && typeof data.balance.balance !== 'undefined'){
+          const bal = Number(data.balance.balance);
+          els.balanceInput.value = `${bal.toFixed(2)} ${data.balance.currency || currency}`;
+        }
+        // captura subscription id
+        if(data.subscription && data.subscription.id && !balanceSubId){
+          balanceSubId = data.subscription.id;
+        }
       }
+
+      if(data.msg_type==='forget'){ /* ok */ }
     }
 
     // ------------- Fluxos API -------------
@@ -356,7 +391,6 @@
       els.tickSymbol.textContent = symbol;
       els.tickNote.textContent = 'Recebendo ticks...';
       send({ ticks: symbol, subscribe: 1 });
-      // o id vem em cada resposta de tick; vamos capturar no próximo tick
       ws.addEventListener('message', function once(e){
         const d = JSON.parse(e.data);
         if(d.msg_type==='tick' && d.tick && d.subscription && d.subscription.id){
@@ -378,6 +412,16 @@
       });
     }
 
+    function subscribeBalance(){
+      if(balanceSubId){ send({ forget: balanceSubId }); balanceSubId = null; }
+      send({ balance: 1, subscribe: 1 });
+      els.refreshBalanceBtn.disabled = false;
+    }
+
+    function requestBalanceOnce(){
+      send({ balance: 1 });
+    }
+
     function cleanupPosition(){
       openContractId = null;
       if(pocSubId){ send({ forget: pocSubId }); pocSubId=null; }
@@ -389,8 +433,8 @@
       if(!authorized) return toast('Autorize primeiro', true);
       const symbol = els.symbolSelect.value;
       const amount = Number(els.stakeInput.value||0);
-      const multiplier = Number(els.multInput.value||100);
-      if(!symbol || !amount) return toast('Preencha símbolo e stake', true);
+      const multiplier = Number(els.multInput.value||10); // x10 padrão
+      if(!symbol || !amount){ els.posStatus.textContent='Preencha símbolo e stake'; return; }
 
       // limit_order opcional
       const limit_order = {};
@@ -406,14 +450,14 @@
         contract_type: direction==='up' ? 'MULTUP' : 'MULTDOWN',
         currency,
         symbol,
-        multiplier,
+        multiplier
       };
       if(Object.keys(limit_order).length) req.limit_order = limit_order;
       const dc = els.dcInput.value;
       if(dc) req.cancellation = dc;
 
-      send(req);
       els.posStatus.textContent = 'Enviando proposal...';
+      send(req);
     }
 
     // ------------- Eventos UI -------------
@@ -421,6 +465,8 @@
     els.logoutBtn.onclick = ()=>{
       cleanupPosition();
       if(ws && ws.readyState===1) ws.close();
+      if(balanceSubId){ send({ forget: balanceSubId }); balanceSubId=null; }
+      if(tickSubId){ send({ forget: tickSubId }); tickSubId=null; }
       clearTokens();
       selectedToken=null; loginId=null; setAuthUI(false);
       els.accountSelect.innerHTML = '';
@@ -436,7 +482,11 @@
       localStorage.setItem('POINT_SELECTED', JSON.stringify(chosen));
       if(ws && ws.readyState===1) authorize(chosen.token, chosen.account, chosen.currency);
       else connectWS();
+      // Atualiza saldo para a conta escolhida
+      setTimeout(()=>{ subscribeBalance(); }, 200);
     };
+
+    els.refreshBalanceBtn.onclick = ()=> requestBalanceOnce();
 
     els.symbolSelect.onchange = (e)=> subscribeTicks(e.target.value);
     els.upBtn.onclick = ()=>placeMultiplier('up');
