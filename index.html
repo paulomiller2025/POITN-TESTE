@@ -5,22 +5,23 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>POINT — Multipliers (Deriv)</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <!-- CDN principal do gráfico (não bloqueia OAuth se falhar) -->
   <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
   <style>
-    :root{ --bg:#0b1220;--card:#121a2b;--muted:#9fb0d0;--ok:#22c55e;--warn:#eab308;--err:#ef4444;--ink:#e6edf7;--soft:#1b2740 }
-    body{background:var(--bg);color:var(--ink)}
-    .card{background:var(--card);border:1px solid #1e2a46;border-radius:1rem;box-shadow:0 10px 20px rgba(0,0,0,.25)}
-    .pill{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.08);border-radius:.8rem}
-    .btn{transition:transform .05s ease,opacity .2s}
-    .btn:active{transform:translateY(1px)}
-    .grid-col{display:grid;grid-template-columns:1fr 1fr;gap:.85rem}
-    select:focus,select:active{color:#000!important;background:#fff!important}
-    select option{color:#000}
-    .layout-3{display:grid;grid-template-columns:360px 1fr 420px;gap:1.5rem;align-items:stretch}
+    :root {--bg:#0b1220;--card:#121a2b;--muted:#9fb0d0;--ok:#22c55e;--warn:#eab308;--err:#ef4444;--ink:#e6edf7;--soft:#1b2740}
+    body {background:var(--bg);color:var(--ink)}
+    .card {background:var(--card);border:1px solid #1e2a46;border-radius:1rem;box-shadow:0 10px 20px rgba(0,0,0,.25)}
+    .pill {background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.08);border-radius:.8rem}
+    .btn {transition:transform .05s ease,opacity .2s}
+    .btn:active {transform:translateY(1px)}
+    .grid-col {display:grid;grid-template-columns:1fr 1fr;gap:.85rem}
+    select:focus,select:active {color:#000!important;background:#fff!important}
+    select option {color:#000}
+    .layout-3 {display:grid;grid-template-columns:360px 1fr 420px;gap:1.5rem;align-items:stretch}
     @media(max-width:1400px){.layout-3{grid-template-columns:320px 1fr 380px}}
     @media(max-width:1024px){.layout-3{grid-template-columns:1fr}}
-    #chartWrap{height:620px} #chart{width:100%;height:100%}
+    #chartWrap {height:620px}
+    @media(max-width:640px){#chartWrap {height:50vh}}
+    #chart{width:100%;height:100%}
   </style>
 </head>
 <body>
@@ -36,17 +37,13 @@
         </div>
       </div>
       <div class="flex items-center gap-2">
-        <button id="loginBtn" class="btn px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm">Conectar</button>
-        <button id="logoutBtn" class="btn px-3 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-slate-100 text-sm hidden">Desconectar</button>
+        <button id="loginBtn" type="button" class="btn px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm">Conectar</button>
+        <button id="logoutBtn" type="button" class="btn px-3 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-slate-100 text-sm hidden">Desconectar</button>
       </div>
     </div>
   </header>
-
   <main class="max-w-[1800px] mx-auto px-6 py-6 space-y-5">
-    <!-- ALERTAS VISÍVEIS -->
     <div id="uiAlert" class="hidden px-4 py-3 rounded-lg border text-sm"></div>
-
-    <!-- STATUS / CONTAS -->
     <section class="card p-4">
       <div class="flex flex-wrap items-center gap-4 justify-between">
         <div class="flex items-center gap-3">
@@ -60,50 +57,42 @@
             </div>
           </div>
         </div>
-
-        <!-- LINHA ÚNICA: Conta + Tipo + Saldo -->
         <div class="flex flex-wrap items-center gap-3">
-          <label class="text-sm text-slate-300">Conta:</label>
+          <label for="accountSelect" class="text-sm text-slate-300">Conta:</label>
           <select id="accountSelect" class="pill px-3 py-2 text-sm text-slate-200 bg-transparent min-w-[220px]" disabled></select>
           <span id="acctType" class="text-xs px-2 py-1 rounded-md bg-white/10 border border-white/10 text-slate-200">—</span>
-          <label class="text-sm text-slate-300">Saldo:</label>
+          <label for="balanceInput" class="text-sm text-slate-300">Saldo:</label>
           <input id="balanceInput" class="pill px-3 py-2 text-sm bg-transparent text-slate-200 w-44 text-right" placeholder="—" disabled />
         </div>
       </div>
     </section>
-
-    <!-- LAYOUT: ESQ | CENTRO | DIR -->
     <section class="layout-3">
-      <!-- ESQUERDA -->
       <div class="space-y-4">
         <div class="card p-4">
           <div class="text-xs uppercase tracking-wide text-slate-400 mb-2">Mercado</div>
           <div class="space-y-3">
             <div>
-              <label class="text-sm text-slate-300">Símbolo (Volatility/Synthetic)</label>
+              <label for="symbolSelect" class="text-sm text-slate-300">Símbolo (Volatility/Synthetic)</label>
               <select id="symbolSelect" class="pill w-full px-3 py-2 text-sm bg-transparent text-slate-200" disabled>
                 <option>— carregando —</option>
               </select>
             </div>
           </div>
         </div>
-
         <div class="card p-4">
           <div class="text-xs uppercase tracking-wide text-slate-400">Posição</div>
           <div id="posStatus" class="text-sm mt-1">Nenhuma posição aberta.</div>
           <div class="flex items-center justify-between mt-3">
             <div class="text-sm">P/L: <span id="plVal" class="font-semibold text-slate-200">—</span></div>
-            <button id="closeBtn" class="btn px-3 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-sm hidden">Fechar posição</button>
+            <button id="closeBtn" type="button" class="btn px-3 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-sm hidden">Fechar posição</button>
           </div>
         </div>
       </div>
-
-      <!-- CENTRO: GRÁFICO -->
       <div class="card p-4">
         <div class="flex items-center justify-between mb-3">
           <div class="text-xs uppercase tracking-wide text-slate-400">Gráfico de Velas</div>
           <div class="flex items-center gap-2">
-            <label class="text-xs text-slate-400">Intervalo:</label>
+            <label for="timeframeSelect" class="text-xs text-slate-400">Intervalo:</label>
             <select id="timeframeSelect" class="pill px-3 py-2 rounded-xl text-xs bg-transparent text-slate-200">
               <option value="60" selected>1m</option>
               <option value="120">2m</option>
@@ -119,9 +108,9 @@
               <option value="86400">1d</option>
             </select>
             <div class="flex items-center gap-1 ml-2">
-              <button id="zoomInBtn" class="btn px-2 py-1 rounded-md border border-white/10 text-xs">+</button>
-              <button id="zoomOutBtn" class="btn px-2 py-1 rounded-md border border-white/10 text-xs">−</button>
-              <button id="zoomFitBtn" class="btn px-2 py-1 rounded-md border border-white/10 text-xs">Fit</button>
+              <button id="zoomInBtn" type="button" class="btn px-2 py-1 rounded-md border border-white/10 text-xs">+</button>
+              <button id="zoomOutBtn" type="button" class="btn px-2 py-1 rounded-md border border-white/10 text-xs">−</button>
+              <button id="zoomFitBtn" type="button" class="btn px-2 py-1 rounded-md border border-white/10 text-xs">Fit</button>
             </div>
             <div class="text-xs text-slate-400 ml-2" id="chartInfo">1m candles • stream</div>
           </div>
@@ -130,19 +119,17 @@
           <div id="chart"></div>
         </div>
       </div>
-
-      <!-- DIREITA -->
       <div class="space-y-4">
         <div class="card p-4">
           <div class="text-xs uppercase tracking-wide text-slate-400 mb-2">Parâmetros</div>
           <div class="space-y-3">
             <div class="grid-col">
               <div>
-                <label class="text-sm text-slate-300">Stake</label>
+                <label for="stakeInput" class="text-sm text-slate-300">Stake</label>
                 <input id="stakeInput" type="number" min="1" step="1" value="5" class="pill w-full px-3 py-2 bg-transparent text-slate-200" disabled />
               </div>
               <div>
-                <label class="text-sm text-slate-300">Multiplier</label>
+                <label for="multInput" class="text-sm text-slate-300">Multiplier</label>
                 <select id="multInput" class="pill w-full px-3 py-2 bg-transparent text-slate-200" disabled>
                   <option value="10" selected>x10</option>
                   <option value="50">x50</option>
@@ -156,20 +143,18 @@
                 </select>
               </div>
             </div>
-
             <div class="grid-col">
               <div>
-                <label class="text-sm text-slate-300">Take Profit (opcional)</label>
+                <label for="tpInput" class="text-sm text-slate-300">Take Profit (opcional)</label>
                 <input id="tpInput" type="number" min="1" step="1" placeholder="ex: 150" class="pill w-full px-3 py-2 bg-transparent text-slate-200" disabled />
               </div>
               <div>
-                <label class="text-sm text-slate-300">Stop Loss (opcional)</label>
+                <label for="slInput" class="text-sm text-slate-300">Stop Loss (opcional)</label>
                 <input id="slInput" type="number" min="1" step="1" placeholder="ex: 130" class="pill w-full px-3 py-2 bg-transparent text-slate-200" disabled />
               </div>
             </div>
-
             <div>
-              <label class="text-sm text-slate-300">Deal Cancellation</label>
+              <label for="dcInput" class="text-sm text-slate-300">Deal Cancellation</label>
               <select id="dcInput" class="pill w-full px-3 py-2 bg-transparent text-slate-200" disabled>
                 <option value="">Desligado</option>
                 <option value="5m">5m</option>
@@ -181,12 +166,11 @@
             </div>
           </div>
         </div>
-
         <div class="card p-4">
           <div class="text-xs uppercase tracking-wide text-slate-400 mb-2">Ação</div>
           <div class="flex gap-3">
-            <button id="upBtn" class="btn flex-1 px-4 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-40" disabled>UP (MULTUP)</button>
-            <button id="downBtn" class="btn flex-1 px-4 py-3 rounded-xl bg-rose-600 hover:bg-rose-500 text-white disabled:opacity-40" disabled>DOWN (MULTDOWN)</button>
+            <button id="upBtn" type="button" class="btn flex-1 px-4 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-40" disabled>UP (MULTUP)</button>
+            <button id="downBtn" type="button" class="btn flex-1 px-4 py-3 rounded-xl bg-rose-600 hover:bg-rose-500 text-white disabled:opacity-40" disabled>DOWN (MULTDOWN)</button>
           </div>
           <div class="text-xs text-slate-400 mt-2">
             Multipliers: perdas limitadas ao <b>stake</b>; podes fechar a qualquer momento; TP/SL e Cancellation suportados.
@@ -195,28 +179,15 @@
       </div>
     </section>
   </main>
-
   <script>
-    /* ================== CONFIG ================== */
-    const APP_ID = 98640; // POINT
-
-    /* [FIX] Canoniza a BASE_URL (remove index.html e garante / no fim) */
-    const BASE_URL = (() => {
-      const u = new URL(location.href);
-      let p = u.pathname || '/';
-      if (p.toLowerCase().endsWith('index.html')) p = p.slice(0, -'index.html'.length);
-      if (!p.endsWith('/')) p += '/';
-      return `${u.origin}${p}`;
-    })();
-
+    const APP_ID = 98640;
+    const WS_URL = `wss://ws.derivws.com/websockets/v3?app_id=${APP_ID}`;
+    const BASE_URL = (location.origin + location.pathname).replace(/[#?].*$/,'');
     const CAN_USE_REDIRECT = /^https?:/.test(location.protocol);
     const OAUTH_URL = `https://oauth.deriv.com/oauth2/authorize?brand=deriv&app_id=${APP_ID}&response_type=token&scope=${encodeURIComponent('read trade')}${CAN_USE_REDIRECT ? `&redirect_uri=${encodeURIComponent(BASE_URL)}` : ''}`;
-    const WS_URL = `wss://ws.derivws.com/websockets/v3?app_id=${APP_ID}`;
     const DEFAULT_SYMBOL = '1HZ100V';
     let CANDLE_GRANULARITY = 60;
-    /* =========================================== */
 
-    /* ---- DOM ---- */
     const els = {
       loginBtn: document.getElementById('loginBtn'),
       logoutBtn: document.getElementById('logoutBtn'),
@@ -241,84 +212,142 @@
       uiAlert: document.getElementById('uiAlert'),
     };
 
-    /* ---- Alert visível ---- */
-    function showAlert(msg, type='info'){
+    function showAlert(msg, type='info') {
       const el = els.uiAlert;
-      const map = {info:'border-sky-500/40 text-sky-200 bg-sky-500/10', err:'border-red-500/40 text-red-200 bg-red-500/10', ok:'border-emerald-500/40 text-emerald-200 bg-emerald-500/10'};
+      const map = {
+        info:'border-sky-500/40 text-sky-200 bg-sky-500/10',
+        err:'border-red-500/40 text-red-200 bg-red-500/10',
+        ok:'border-emerald-500/40 text-emerald-200 bg-emerald-500/10'
+      };
       el.className = `px-4 py-3 rounded-lg border text-sm ${map[type]||map.info}`;
       el.textContent = msg;
       el.classList.remove('hidden');
     }
-    function hideAlert(){ els.uiAlert.classList.add('hidden'); }
+    function hideAlert() { els.uiAlert.classList.add('hidden'); }
 
-    /* ---- Estado global ---- */
-    let ws=null, authorized=false, selectedToken=null, loginId=null, currency='USD';
-    let tickSubId=null, candleSubId=null, openContractId=null, pocSubId=null, balanceSubId=null;
-    let chart, candleSeries, tickSeries;
-    let authRetryTimer=null;
+    let ws = null, authorized = false, selectedToken = null, loginId = null, currency = 'USD';
+    let tickSubId = null, candleSubId = null, openContractId = null, pucSubId = null, balanceSubId = null;
+    let chart = null, candleSeries = null, tickSeries = null, authRetryTimer = null;
 
-    /* ---- Helpers UI ---- */
-    function setConnectedUI(on){
-      els.connStatus.textContent = on ? 'Conectado (WebSocket ativo)' : 'Desconectado';
-    }
-    function setAuthUI(on){
+    function setConnectedUI(on) { els.connStatus.textContent = on ? 'Conectado (WebSocket ativo)' : 'Desconectado'; }
+    function setAuthUI(on) {
       authorized = !!on;
       const dis = !on;
-      [els.accountSelect, els.symbolSelect, els.stakeInput, els.multInput, els.tpInput, els.slInput, els.dcInput, els.upBtn, els.downBtn, els.timeframeSelect].forEach(el=>{ el.disabled = dis; });
+      [els.accountSelect, els.symbolSelect, els.stakeInput, els.multInput,
+       els.tpInput, els.slInput, els.dcInput, els.upBtn, els.downBtn, els.timeframeSelect]
+       .forEach(el => el.disabled = dis);
       els.logoutBtn.classList.toggle('hidden', !on);
       els.loginBtn.classList.toggle('hidden', on);
       els.loginNote.textContent = on ? 'Autorizado. Escolhe a conta e o símbolo para negociar.' : 'Clique em Conectar para iniciar o OAuth.';
-      if(dis){ els.balanceInput.value=''; els.balanceInput.placeholder='—'; els.acctType.textContent='—'; }
-    }
-    function toast(msg,isErr=false){ (isErr?console.error:console.log)(msg); if(isErr) showAlert(msg,'err'); }
-
-    /* ---- OAuth tokens ---- */
-    function parseTokensFromSearchOrHash(qs){
-      const p = new URLSearchParams(qs), out=[];
-      for(let i=1;i<=10;i++){
-        const tokenI=p.get(`token${i}`)||p.get(`access_token${i}`)||p.get(`oauth_token${i}`);
-        const acctI=p.get(`acct${i}`)||p.get(`loginid${i}`)||p.get(`account${i}`);
-        const curI=p.get(`cur${i}`)||p.get(`currency${i}`);
-        if(tokenI) out.push({token:tokenI, account:(acctI||'').toUpperCase()||null, currency:(curI||'USD').toUpperCase()});
+      if(dis) {
+        els.balanceInput.value = '';
+        els.balanceInput.placeholder = '—';
+        els.acctType.textContent = '—';
+        els.posStatus.textContent = 'Nenhuma posição aberta.';
+        els.plVal.textContent = '—';
       }
-      const token=p.get('token')||p.get('access_token')||p.get('oauth_token');
-      if(token) out.push({token, account:(p.get('acct')||p.get('loginid')||p.get('account')||'').toUpperCase()||null, currency:(p.get('cur')||p.get('currency')||'USD').toUpperCase()});
+    }
+    function toast(msg, isErr=false) {
+      (isErr ? console.error : console.log)(msg);
+      if(isErr) showAlert(msg, 'err');
+    }
+
+    function parseAnyTokens(input) {
+      const out = [];
+      if(!input) return out;
+      const p = new URLSearchParams(input);
+      const rawList = p.get('tokens') || p.get('oauth_tokens');
+      if(rawList) {
+        try {
+          const decoded = decodeURIComponent(rawList);
+          const arr = JSON.parse(decoded);
+          if(Array.isArray(arr)) {
+            arr.forEach(t => {
+              if(t && (t.token || t.access_token)) {
+                out.push({
+                  token: t.token || t.access_token,
+                  account: (t.loginid || t.account || '').toUpperCase() || null,
+                  currency: (t.currency || 'USD').toUpperCase()
+                });
+              }
+            });
+          }
+        } catch(e) {}
+      }
+      ['access_token','token','oauth_token','auth_token'].forEach(k => {
+        const v = p.get(k);
+        if(v) {
+          out.push({
+            token: v,
+            account: (p.get('loginid') || p.get('acct') || p.get('account') || '').toUpperCase() || null,
+            currency: (p.get('currency') || p.get('cur') || 'USD').toUpperCase()
+          });
+        }
+      });
+      for(let i = 1; i <= 10; i++) {
+        const t = p.get(`token${i}`) || p.get(`access_token${i}`) || p.get(`oauth_token${i}`);
+        if(t) {
+          out.push({
+            token: t,
+            account: (p.get(`acct${i}`) || p.get(`loginid${i}`) || '').toUpperCase() || null,
+            currency: (p.get(`currency${i}`) || p.get(`cur${i}`) || 'USD').toUpperCase()
+          });
+        }
+      }
+      p.forEach((val, key) => {
+        if(/token/i.test(key) && typeof val === 'string' && val.length > 20) {
+          if(!out.find(o => o.token === val)) {
+            out.push({
+              token: val,
+              account: (p.get('loginid') || p.get('acct') || '').toUpperCase() || null,
+              currency: (p.get('currency') || p.get('cur') || 'USD').toUpperCase()
+            });
+          }
+        }
+      });
       return out;
     }
-    function extractTokensFromUrl(){
-      try{
-        const q = location.search.startsWith('?')?location.search.slice(1):'';
-        const h = location.hash.startsWith('#')?location.hash.slice(1):'';
-        const tokens=[...parseTokensFromSearchOrHash(q),...parseTokensFromSearchOrHash(h)];
-        if(tokens.length){
-          localStorage.setItem('POINT_TOKENS', JSON.stringify(tokens));
-          // limpa a URL para a BASE_URL canônica
-          history.replaceState({}, document.title, BASE_URL);
-          hideAlert();
-        }
-      }catch(e){
-        toast('Falha ao ler tokens do OAuth.', true);
+    function extractTokensFromUrl() {
+      const q = location.search.startsWith('?') ? location.search.slice(1) : '';
+      const h = location.hash.startsWith('#') ? location.hash.slice(1) : '';
+      const tokens = [...parseAnyTokens(q), ...parseAnyTokens(h)];
+      if(tokens.length) {
+        localStorage.setItem('POINT_TOKENS', JSON.stringify(tokens));
+        history.replaceState({}, document.title, BASE_URL);
+        hideAlert();
       }
     }
-    function getStoredTokens(){ try{return JSON.parse(localStorage.getItem('POINT_TOKENS')||'[]')}catch(e){return[]} }
-    function setSelectedToken(obj){ localStorage.setItem('POINT_SELECTED', JSON.stringify(obj||null)); }
-    function getSelectedToken(){ try{return JSON.parse(localStorage.getItem('POINT_SELECTED')||'null')}catch(e){return null} }
-    function clearTokens(){ localStorage.removeItem('POINT_TOKENS'); localStorage.removeItem('POINT_SELECTED'); }
+    function getStoredTokens() {
+      try { return JSON.parse(localStorage.getItem('POINT_TOKENS') || '[]'); }
+      catch(e) { return []; }
+    }
+    function clearTokens() {
+      localStorage.removeItem('POINT_TOKENS');
+      localStorage.removeItem('POINT_SELECTED');
+    }
 
-    /* ---- WebSocket ---- */
-    function connectWS(){
-      if(ws && ws.readyState===1) return;
+    function wsSend(msg) {
+      if (!ws || ws.readyState !== WebSocket.OPEN) {
+        toast('WS não conectado', true);
+        return;
+      }
+      console.debug('[WS SEND]', msg);
+      ws.send(JSON.stringify(msg));
+    }
+
+    function connectWS() {
+      if(ws && ws.readyState === WebSocket.OPEN) return;
       ws = new WebSocket(WS_URL);
-      ws.onopen = ()=>{
+      ws.onopen = () => {
         setConnectedUI(true);
+        hideAlert();
         const tokens = getStoredTokens();
-        if(tokens.length){
-          const sel = getSelectedToken() || tokens[0];
-          showAlert('WS conectado. A autorizar…', 'info');
+        if(tokens.length) {
+          const sel = JSON.parse(localStorage.getItem('POINT_SELECTED') || 'null') || tokens[0];
           authorize(sel.token, sel.account, sel.currency);
           clearTimeout(authRetryTimer);
-          authRetryTimer = setTimeout(()=>{
-            if(!authorized){
+          authRetryTimer = setTimeout(() => {
+            if(!authorized) {
               authorize(sel.token, sel.account, sel.currency);
               showAlert('Reenviando autorização…', 'info');
             }
@@ -327,18 +356,16 @@
           showAlert('Sem tokens salvos. Clique em Conectar.', 'info');
         }
       };
-      ws.onclose = ()=>{ setConnectedUI(false); setAuthUI(false); showAlert('Conexão fechada.', 'info'); };
+      ws.onclose = () => { setConnectedUI(false); setAuthUI(false); };
       ws.onmessage = handleMessage;
-      ws.onerror = ()=>toast('WebSocket error (rede/app_id/origem).', true);
+      ws.onerror = () => toast('WebSocket error (rede/app_id/origem).', true);
     }
-    function send(msg){ if(!ws || ws.readyState!==1){ toast('WS não conectado', true); return; } ws.send(JSON.stringify(msg)); }
 
-    /* ---- Gráfico (carga segura) ---- */
-    function initChart(){
+    function initChart() {
       if(!window.LightweightCharts) return;
-      const container=document.getElementById('chart');
+      const container = document.getElementById('chart');
       chart = LightweightCharts.createChart(container, {
-        layout:{background:{type:'solid',color:'#0b1220'},textColor:'#cbd5e1'},
+        layout: {background:{type:'solid',color:'#0b1220'},textColor:'#cbd5e1'},
         grid:{vertLines:{color:'#1e293b'},horzLines:{color:'#1e293b'}},
         crosshair:{mode:0}, rightPriceScale:{borderColor:'#334155'}, timeScale:{borderColor:'#334155'},
         handleScroll:true, handleScale:true
@@ -349,229 +376,307 @@
         wickDownColor:'#ef4444', wickUpColor:'#22c55e'
       });
       tickSeries = chart.addLineSeries({lineWidth:1.5});
-      resizeChart(); window.addEventListener('resize', resizeChart);
+      resizeChart();
+      window.addEventListener('resize', resizeChart);
     }
-    function ensureChartLoaded(){
-      if(window.LightweightCharts){ initChart(); return; }
-      const s=document.createElement('script');
-      s.src='https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js';
-      s.onload=initChart; s.onerror=()=>toast('Falha ao carregar biblioteca do gráfico.', true);
+    function ensureChartLoaded() {
+      if (window.LightweightCharts) { initChart(); return; }
+      const s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js';
+      s.onload = initChart;
+      s.onerror = () => toast('Falha ao carregar biblioteca do gráfico.', true);
       document.head.appendChild(s);
     }
-    function resizeChart(){ if(!chart) return; const wrap=document.getElementById('chartWrap'); chart.applyOptions({width:wrap.clientWidth,height:wrap.clientHeight}); }
-
-    /* ---- Util ---- */
-    function updateAcctType(loginid){ if(!loginid){ els.acctType.textContent='—'; return; } els.acctType.textContent = /^VRTC/i.test(loginid) ? 'Conta Demo' : 'Conta Real'; }
-    function tfLabel(g){ const m={60:'1m',120:'2m',180:'3m',300:'5m',600:'10m',900:'15m',1800:'30m',3600:'1h',7200:'2h',14400:'4h',28800:'8h',86400:'1d'}; return m[g]||(`${g}s`); }
-
-    /* ---- Fluxos API ---- */
-    function authorize(token, acct, cur){
-      if(!token){ showAlert('Token OAuth ausente. Clique em Conectar.', 'err'); return; }
-      selectedToken=token; currency=(cur||'USD').toUpperCase();
-      send({authorize:token, passthrough:{acct}});
-    }
-    function loadActiveSymbols(){ send({active_symbols:'brief', product_type:'basic'}); }
-    function ensureDefaultSymbol(){ if(!els.symbolSelect.value){ els.symbolSelect.value=DEFAULT_SYMBOL; } if(els.symbolSelect.value){ subscribeCandles(els.symbolSelect.value); subscribeTicks(els.symbolSelect.value); } }
-    function subscribeTicks(symbol){
-      if(tickSubId){ send({forget:tickSubId}); tickSubId=null; }
-      if(tickSeries) tickSeries.setData([]);
-      send({ticks:symbol, subscribe:1});
-      ws.addEventListener('message', function once(e){ try{const d=JSON.parse(e.data); if(d.msg_type==='tick'&&d.subscription?.id){tickSubId=d.subscription.id; ws.removeEventListener('message', once);} }catch{} });
-    }
-    function subscribeCandles(symbol){
-      if(candleSubId){ send({forget:candleSubId}); candleSubId=null; }
-      send({ticks_history:symbol, style:'candles', granularity:CANDLE_GRANULARITY, count:300, subscribe:1});
-      ws.addEventListener('message', function once(e){ try{const d=JSON.parse(e.data); if(d.msg_type==='candles'&&d.subscription?.id){candleSubId=d.subscription.id; ws.removeEventListener('message', once);} }catch{} });
-      els.chartInfo.textContent = tfLabel(CANDLE_GRANULARITY) + ' candles • stream';
-    }
-    function subscribeOpenContract(contract_id){
-      if(pocSubId){ send({forget:pocSubId}); pocSubId=null; }
-      send({proposal_open_contract:1, contract_id, subscribe:1});
-      ws.addEventListener('message', function once(e){ try{const d=JSON.parse(e.data); if(d.msg_type==='proposal_open_contract'&&d.subscription?.id){pocSubId=d.subscription.id; ws.removeEventListener('message', once);} }catch{} });
-    }
-    function subscribeBalance(){ if(balanceSubId){ send({forget:balanceSubId}); balanceSubId=null; } send({balance:1, subscribe:1}); }
-    function requestBalanceOnce(){ send({balance:1}); }
-    function cleanupPosition(){ openContractId=null; if(pocSubId){ send({forget:pocSubId}); pocSubId=null; } els.closeBtn.classList.add('hidden'); els.plVal.textContent='—'; }
-
-    function placeMultiplier(direction){
-      if(!authorized) return toast('Autorize primeiro', true);
-      const symbol=els.symbolSelect.value||DEFAULT_SYMBOL;
-      const amount=Number(els.stakeInput.value||0);
-      const multiplier=Number(els.multInput.value||10);
-      if(!symbol||!amount){ els.posStatus.textContent='Preencha símbolo e stake'; return; }
-      const limit_order={}, tp=Number(els.tpInput.value||0), sl=Number(els.slInput.value||0);
-      if(tp>0) limit_order.take_profit=tp; if(sl>0) limit_order.stop_loss=sl;
-      const req={ proposal:1, amount, basis:'stake', product_type:'multiplier', contract_type: direction==='up'?'MULTUP':'MULTDOWN', currency, symbol, multiplier };
-      if(Object.keys(limit_order).length) req.limit_order=limit_order; const dc=els.dcInput.value; if(dc) req.cancellation=dc;
-      els.posStatus.textContent='Enviando proposal...'; send(req);
+    function resizeChart() {
+      if(!chart) return;
+      const wrap = document.getElementById('chartWrap');
+      chart.applyOptions({ width: wrap.clientWidth, height: wrap.clientHeight });
     }
 
-    /* ---- Mensagens WS ---- */
-    function populateAccountsFromAuthorize(auth){
-      try{
-        const list = Array.isArray(auth.account_list) ? auth.account_list : [];
-        els.accountSelect.innerHTML = '';
-        if(list.length){
-          list.forEach(acc=>{
-            const o = document.createElement('option');
-            o.value = acc.loginid;
-            o.textContent = `${acc.loginid} • ${(acc.currency||'USD').toUpperCase()}`;
-            els.accountSelect.appendChild(o);
-          });
-          els.accountSelect.disabled = false;
-        }else{
-          // fallback se não vier account_list
-          const o = document.createElement('option');
-          o.value = auth.loginid;
-          o.textContent = `${auth.loginid} • ${(auth.currency||'USD').toUpperCase()}`;
-          els.accountSelect.appendChild(o);
-          els.accountSelect.disabled = false;
-        }
-      }catch(e){
-        console.warn('Falha ao popular accounts:', e);
-      }
-    }
-
-    function handleMessage(evt){
+    function handleMessage(evt) {
       const data = JSON.parse(evt.data);
-      if(data.error){
+      if(data.error) {
         toast(`Erro API: ${data.error.code||''} ${data.error.message}`, true);
-        els.posStatus.textContent=`Erro: ${data.error.message}`;
+        els.posStatus.textContent = `Erro: ${data.error.message}`;
         return;
       }
-
-      if(data.msg_type==='authorize'){
-        clearTimeout(authRetryTimer);
-        const auth = data.authorize;
-        loginId = auth.loginid;
-        currency = (auth.currency||'USD').toUpperCase();
-        setAuthUI(true); hideAlert();
-        updateAcctType(loginId);
-
-        // [FIX] Preenche as contas a partir do authorize
-        populateAccountsFromAuthorize(auth);
-
-        // [FIX] Garante mapeamento token -> conta/currency para seleção persistida
-        const tokens = getStoredTokens();
-        const idx = tokens.findIndex(t => t.token === selectedToken);
-        if(idx>=0){
-          tokens[idx].account = loginId;
-          tokens[idx].currency = currency;
-          localStorage.setItem('POINT_TOKENS', JSON.stringify(tokens));
-          setSelectedToken(tokens[idx]);
-        }else{
-          setSelectedToken({token:selectedToken, account:loginId, currency});
-        }
-
-        loadActiveSymbols();
-        els.posStatus.textContent='Nenhuma posição aberta.';
-        subscribeBalance();
-        setTimeout(()=>ensureDefaultSymbol(), 50);
-      }
-
-      if(data.msg_type==='active_symbols'){
-        const syms=(data.active_symbols||[])
-          .filter(s=>s.market==='synthetic_index'||s.symbol.includes('R_')||s.symbol.includes('VOL')||s.symbol.startsWith('1HZ'))
-          .map(s=>({symbol:s.symbol, display:`${s.display_name} (${s.symbol})`}));
-        els.symbolSelect.innerHTML='';
-        syms.forEach(s=>{ const o=document.createElement('option'); o.value=s.symbol; o.textContent=s.display; els.symbolSelect.appendChild(o); });
-        const hasDefault=syms.find(s=>s.symbol===DEFAULT_SYMBOL);
-        els.symbolSelect.value = hasDefault?DEFAULT_SYMBOL:(syms[0]?.symbol||'');
-        if(els.symbolSelect.value){ subscribeCandles(els.symbolSelect.value); subscribeTicks(els.symbolSelect.value); }
-      }
-
-      if(data.msg_type==='tick' && tickSeries){
-        tickSeries.update({ time:Number(data.tick.epoch), value:Number(data.tick.quote) });
-      }
-
-      if(data.msg_type==='candles' && candleSeries){
-        const arr=Array.isArray(data.candles)?data.candles:[data.candles];
-        const mapped=arr.map(c=>({time:Number(c.epoch),open:+c.open,high:+c.high,low:+c.low,close:+c.close}));
-        if(Array.isArray(data.candles)){ candleSeries.setData(mapped); chart && chart.timeScale().fitContent(); } else { candleSeries.update(mapped[0]); }
-      }
-
-      if(data.msg_type==='proposal'){
-        if(data.proposal && data.proposal.id){ const id=data.proposal.id; const ask=Number(data.proposal.ask_price); send({buy:id, price:ask}); }
-      }
-
-      if(data.msg_type==='buy'){
-        if(data.buy && data.buy.contract_id){
-          openContractId=data.buy.contract_id;
-          els.posStatus.textContent=`Contrato #${openContractId} aberto. A acompanhar...`;
-          els.closeBtn.classList.remove('hidden');
-          subscribeOpenContract(openContractId);
-        }
-      }
-
-      if(data.msg_type==='proposal_open_contract'){
-        const poc=data.proposal_open_contract; if(!poc) return;
-        if(poc.contract_id) openContractId=poc.contract_id;
-        const pl=(poc.profit||0); els.plVal.textContent=`${pl.toFixed(2)} ${currency}`;
-        if(poc.is_sold){ els.posStatus.textContent=`Contrato fechado. Resultado: ${pl.toFixed(2)} ${currency}`; cleanupPosition(); }
-      }
-
-      if(data.msg_type==='sell'){ toast('Solicitado fechar posição.'); }
-
-      if(data.msg_type==='balance'){
-        if(data.balance && typeof data.balance.balance!=='undefined'){
-          els.balanceInput.value = `${Number(data.balance.balance).toFixed(2)} ${data.balance.currency || currency}`;
-        }
-        if(data.subscription && data.subscription.id && !balanceSubId){ balanceSubId=data.subscription.id; }
+      switch(data.msg_type) {
+        case 'authorize': onAuthorize(data); break;
+        case 'active_symbols': onActiveSymbols(data); break;
+        case 'tick': if(tickSeries) tickSeries.update({ time: Number(data.tick.epoch), value: Number(data.tick.quote) }); break;
+        case 'candles': if(candleSeries) onCandles(data); break;
+        case 'proposal': if(data.proposal?.id) { sendBuy(data.proposal); } break;
+        case 'buy': if(data.buy?.contract_id) onBuy(data.buy); break;
+        case 'proposal_open_contract': onProposalOpen(data.proposal_open_contract); break;
+        case 'sell': toast('Solicitado fechar posição.'); break;
+        case 'balance': onBalance(data); break;
       }
     }
 
-    /* ---- Eventos UI ---- */
-    els.loginBtn.onclick = ()=>{
-      if(!CAN_USE_REDIRECT) alert('Abra em https (ex.: GitHub Pages).');
-      try{window.location.assign(OAUTH_URL);}catch{window.location.href=OAUTH_URL;}
-    };
-    els.logoutBtn.onclick = ()=>{
-      cleanupPosition();
-      if(balanceSubId){ send({forget:balanceSubId}); balanceSubId=null; }
-      if(tickSubId){ send({forget:tickSubId}); tickSubId=null; }
-      if(candleSubId){ send({forget:candleSubId}); candleSubId=null; }
-      if(ws && ws.readyState===1) ws.close();
-      clearTokens(); selectedToken=null; loginId=null; setAuthUI(false); els.accountSelect.innerHTML='';
-      candleSeries&&candleSeries.setData([]); tickSeries&&tickSeries.setData([]);
-      showAlert('Sessão limpa.','ok');
-    };
-    els.accountSelect.onchange = ()=>{
-      const opt=els.accountSelect.value; if(!opt) return;
-      const tokens=getStoredTokens();
-      const chosen=tokens.find(t=>t.account===opt) || getSelectedToken() || tokens[0];
-      if(!chosen) return;
-      setSelectedToken(chosen);
-      updateAcctType(opt);
-      if(ws && ws.readyState===1) authorize(chosen.token, chosen.account, chosen.currency); else connectWS();
-      setTimeout(()=>{ subscribeBalance(); requestBalanceOnce(); }, 200);
-    };
-    els.symbolSelect.onchange = e=>{ const sym=e.target.value; if(!sym) return; subscribeCandles(sym); subscribeTicks(sym); };
-    els.timeframeSelect.onchange = e=>{ CANDLE_GRANULARITY=Number(e.target.value||60); const sym=els.symbolSelect.value||DEFAULT_SYMBOL; if(sym) subscribeCandles(sym); };
-    document.getElementById('zoomInBtn').onclick = ()=>{ if(!chart) return; const s=chart.timeScale().getBarSpacing(); chart.timeScale().setBarSpacing(s*0.8); };
-    document.getElementById('zoomOutBtn').onclick = ()=>{ if(!chart) return; const s=chart.timeScale().getBarSpacing(); chart.timeScale().setBarSpacing(s*1.25); };
-    document.getElementById('zoomFitBtn').onclick = ()=>{ if(!chart) return; chart.timeScale().fitContent(); };
+    function onAuthorize(data) {
+      clearTimeout(authRetryTimer);
+      loginId = data.authorize.loginid;
+      currency = data.authorize.currency || 'USD';
+      setAuthUI(true); hideAlert();
+      updateAcctType(loginId);
+      if(!els.accountSelect.options.length) {
+        const opt = document.createElement('option');
+        opt.value = loginId;
+        opt.textContent = `${loginId} • ${currency}`;
+        els.accountSelect.appendChild(opt);
+        els.accountSelect.disabled = false;
+        const sel = JSON.parse(localStorage.getItem('POINT_SELECTED') || '{}');
+        localStorage.setItem('POINT_SELECTED', JSON.stringify({ account: loginId, token: sel.token || selectedToken, currency }));
+      }
+      loadActiveSymbols();
+      els.posStatus.textContent = 'Nenhuma posição aberta.';
+      subscribeBalance();
+      setTimeout(() => ensureDefaultSymbol(), 50);
+    }
 
-    /* ---- Inicialização ---- */
-    (function init(){
+    function onActiveSymbols(data) {
+      const syms = (data.active_symbols || [])
+        .filter(s => s.market === 'synthetic_index' || s.symbol.includes('R_') || s.symbol.includes('VOL') || s.symbol.startsWith('1HZ'))
+        .map(s => ({ symbol: s.symbol, display: `${s.display_name} (${s.symbol})` }));
+      els.symbolSelect.innerHTML = '';
+      syms.forEach(s => {
+        const o = document.createElement('option');
+        o.value = s.symbol;
+        o.textContent = s.display;
+        els.symbolSelect.appendChild(o);
+      });
+      const hasDefault = syms.find(s => s.symbol === DEFAULT_SYMBOL);
+      els.symbolSelect.value = hasDefault ? DEFAULT_SYMBOL : (syms[0]?.symbol || '');
+      if(els.symbolSelect.value) {
+        subscribeCandles(els.symbolSelect.value);
+        subscribeTicks(els.symbolSelect.value);
+      }
+    }
+
+    function onCandles(data) {
+      const arr = Array.isArray(data.candles) ? data.candles : [data.candles];
+      const mapped = arr.map(c => ({ time: Number(c.epoch), open: +c.open, high: +c.high, low: +c.low, close: +c.close }));
+      if(Array.isArray(data.candles)) {
+        candleSeries.setData(mapped);
+        chart && chart.timeScale().fitContent();
+      } else {
+        candleSeries.update(mapped[0]);
+      }
+    }
+
+    function sendBuy(proposal) {
+      sendRequest({ buy: proposal.id, price: Number(proposal.ask_price) });
+    }
+
+    function onBuy(buy) {
+      openContractId = buy.contract_id;
+      els.posStatus.textContent = `Contrato #${openContractId} aberto. A acompanhar...`;
+      els.closeBtn.classList.remove('hidden');
+      subscribeOpenContract(openContractId);
+    }
+
+    function onProposalOpen(poc) {
+      if(!poc) return;
+      if(poc.contract_id) openContractId = poc.contract_id;
+      const pl = poc.profit || 0;
+      els.plVal.textContent = `${pl.toFixed(2)} ${currency}`;
+      if(poc.is_sold) {
+        els.posStatus.textContent = `Contrato fechado. Resultado: ${pl.toFixed(2)} ${currency}`;
+        cleanupPosition();
+      }
+    }
+
+    function onBalance(data) {
+      if(data.balance && typeof data.balance.balance !== 'undefined') {
+        els.balanceInput.value = `${Number(data.balance.balance).toFixed(2)} ${data.balance.currency || currency}`;
+      }
+      if(data.subscription?.id && !balanceSubId) balanceSubId = data.subscription.id;
+    }
+
+    function updateAcctType(loginid) {
+      if(!loginid) {
+        els.acctType.textContent = '—';
+        return;
+      }
+      els.acctType.textContent = /^VRTC/i.test(loginid) ? 'Conta Demo' : 'Conta Real';
+    }
+
+    function authorize(token, acct, cur) {
+      selectedToken = token;
+      currency = (cur || 'USD').toUpperCase();
+      wsSend({ authorize: token, passthrough: { acct } });
+    }
+
+    function loadActiveSymbols() { wsSend({ active_symbols:'brief', product_type:'basic' }); }
+    function ensureDefaultSymbol() {
+      if(!els.symbolSelect.value) els.symbolSelect.value = DEFAULT_SYMBOL;
+      if(els.symbolSelect.value) {
+        subscribeCandles(els.symbolSelect.value);
+        subscribeTicks(els.symbolSelect.value);
+      }
+    }
+
+    function onceMsg(type, cb) {
+      const handler = (e) => {
+        try {
+          const d = JSON.parse(e.data);
+          if(d.msg_type === type && d.subscription?.id) {
+            cb(d.subscription.id);
+            ws.removeEventListener('message', handler);
+          }
+        } catch {}
+      };
+      ws.addEventListener('message', handler, { once: true });
+    }
+
+    function subscribeTicks(symbol) {
+      if(tickSubId) wsSend({ forget: tickSubId });
+      tickSubId = null;
+      tickSeries && tickSeries.setData([]);
+      wsSend({ ticks: symbol, subscribe: 1 });
+      onceMsg('tick', id => { tickSubId = id; });
+    }
+
+    function subscribeCandles(symbol) {
+      if(candleSubId) wsSend({ forget: candleSubId });
+      candleSubId = null;
+      wsSend({ ticks_history: symbol, style: 'candles', granularity: CANDLE_GRANULARITY, count: 300, subscribe: 1 });
+      onceMsg('candles', id => { candleSubId = id; });
+      els.chartInfo.textContent = tfLabel(CANDLE_GRANULARITY) + ' candles • stream';
+    }
+
+    function tfLabel(g) {
+      const m = {60:'1m',120:'2m',180:'3m',300:'5m',600:'10m',900:'15m',1800:'30m',3600:'1h',7200:'2h',14400:'4h',28800:'8h',86400:'1d'};
+      return m[g] || `${g}s`;
+    }
+
+    function subscribeOpenContract(contract_id) {
+      if(pucSubId) wsSend({ forget: pucSubId });
+      pucSubId = null;
+      wsSend({ proposal_open_contract: 1, contract_id, subscribe: 1 });
+      onceMsg('proposal_open_contract', id => { pucSubId = id; });
+    }
+
+    function subscribeBalance() {
+      if(balanceSubId) wsSend({ forget: balanceSubId });
+      balanceSubId = null;
+      wsSend({ balance:1, subscribe:1 });
+    }
+
+    function cleanupPosition() {
+      openContractId = null;
+      if(pucSubId) wsSend({ forget: pucSubId });
+      pucSubId = null;
+      els.closeBtn.classList.add('hidden');
+      els.plVal.textContent = '—';
+    }
+
+    function placeMultiplier(direction) {
+      if(!authorized) return toast('Autorize primeiro', true);
+      const symbol = els.symbolSelect.value || DEFAULT_SYMBOL;
+      const amount = Number(els.stakeInput.value || 0);
+      const multiplier = Number(els.multInput.value || 10);
+      if(!symbol || !amount) {
+        els.posStatus.textContent = 'Preencha símbolo e stake';
+        return;
+      }
+      els.upBtn.disabled = true;
+      els.downBtn.disabled = true;
+
+      const limit_order = {};
+      const tp = Number(els.tpInput.value || 0), sl = Number(els.slInput.value || 0);
+      if(tp > 0) limit_order.take_profit = tp;
+      if(sl > 0) limit_order.stop_loss = sl;
+
+      const req = {
+        proposal: 1,
+        amount,
+        basis: 'stake',
+        product_type: 'multiplier',
+        contract_type: direction === 'up' ? 'MULTUP' : 'MULTDOWN',
+        currency,
+        symbol,
+        multiplier
+      };
+
+      if(Object.keys(limit_order).length) req.limit_order = limit_order;
+      const dc = els.dcInput.value;
+      if(dc) req.cancellation = dc;
+
+      els.posStatus.textContent = 'Enviando proposal...';
+      wsSend(req);
+
+      setTimeout(() => {
+        els.upBtn.disabled = false;
+        els.downBtn.disabled = false;
+      }, 3000);
+    }
+
+    els.loginBtn.onclick = () => {
+      if(!CAN_USE_REDIRECT) alert('Abra em https (ex.: GitHub Pages).');
+      try { window.location.assign(OAUTH_URL); }
+      catch { window.location.href = OAUTH_URL; }
+    };
+
+    els.logoutBtn.onclick = () => {
+      cleanupPosition();
+      ws && ws.readyState === WebSocket.OPEN && ws.close();
+      balanceSubId && wsSend({ forget: balanceSubId });
+      tickSubId && wsSend({ forget: tickSubId });
+      candleSubId && wsSend({ forget: candleSubId });
+      clearTokens();
+      selectedToken = null;
+      loginId = null;
+      setAuthUI(false);
+      els.accountSelect.innerHTML = '';
+      candleSeries && candleSeries.setData([]);
+      tickSeries && tickSeries.setData([]);
+      showAlert('Sessão limpa.', 'ok');
+    };
+
+    els.accountSelect.onchange = () => {
+      const opt = els.accountSelect.value;
+      if(!opt) return;
+      const tokens = getStoredTokens();
+      const chosen = tokens.find(t => t.account === opt) || tokens[0];
+      if(!chosen) return;
+      localStorage.setItem('POINT_SELECTED', JSON.stringify(chosen));
+      updateAcctType(opt);
+      ws && ws.readyState === WebSocket.OPEN ? authorize(chosen.token, chosen.account, chosen.currency) : connectWS();
+      setTimeout(() => { subscribeBalance(); wsSend({ balance:1 }); }, 200);
+    };
+
+    els.symbolSelect.onchange = e => { const sym = e.target.value; if(sym) { subscribeCandles(sym); subscribeTicks(sym); } };
+    els.timeframeSelect.onchange = e => { CANDLE_GRANULARITY = Number(e.target.value || 60); const sym = els.symbolSelect.value || DEFAULT_SYMBOL; if(sym) subscribeCandles(sym); };
+    document.getElementById('zoomInBtn').onclick = () => {
+      if(!chart) return;
+      const s = chart.timeScale().getBarSpacing();
+      chart.timeScale().setBarSpacing(s * 0.8);
+    };
+    document.getElementById('zoomOutBtn').onclick = () => {
+      if(!chart) return;
+      const s = chart.timeScale().getBarSpacing();
+      chart.timeScale().setBarSpacing(s * 1.25);
+    };
+    document.getElementById('zoomFitBtn').onclick = () => { if(!chart) return; chart.timeScale().fitContent(); };
+
+    (function init() {
       ensureChartLoaded();
       extractTokensFromUrl();
-      const tokens=getStoredTokens();
-
-      // Popular seletor se já veio algo pelo OAuth (pode não ter acct/cur, sem problema)
-      els.accountSelect.innerHTML='';
-      tokens.forEach(t=>{
-        if(t.account){
-          const o=document.createElement('option');
-          o.value=t.account; o.textContent=`${t.account} • ${(t.currency||'USD').toUpperCase()}`;
+      const tokens = getStoredTokens();
+      els.accountSelect.innerHTML = '';
+      tokens.forEach(t => {
+        if(t.account) {
+          const o = document.createElement('option');
+          o.value = t.account;
+          o.textContent = `${t.account} • ${t.currency}`;
           els.accountSelect.appendChild(o);
         }
       });
-      if(els.accountSelect.options.length) els.accountSelect.disabled=false;
-
-      // Lembrar seleção e conectar
-      if(tokens.length){
-        const first = getSelectedToken() || tokens[0];
-        setSelectedToken(first);
+      if(els.accountSelect.options.length) els.accountSelect.disabled = false;
+      if(tokens.length) {
+        const first = tokens[0];
+        localStorage.setItem('POINT_SELECTED', JSON.stringify(first));
         if(first.account) updateAcctType(first.account);
       }
       connectWS();
