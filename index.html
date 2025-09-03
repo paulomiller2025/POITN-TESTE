@@ -87,9 +87,13 @@
           <div class="text-xs uppercase tracking-wide text-slate-400">Mercado</div>
           <div class="space-y-2">
             <label class="text-sm text-slate-300">Símbolo (Volatility/Synthetic)</label>
-            <select id="symbolSelect" class="pill w-full px-3 py-2 rounded-xl text-sm bg-transparent text-slate-200" disabled>
-              <option>— carregando —</option>
-            </select>
+            <div class="flex items-center gap-2">
+              <select id="symbolSelect" class="pill w-full px-3 py-2 rounded-xl text-sm bg-transparent text-slate-200" disabled>
+                <option>— carregando —</option>
+              </select>
+              <!-- BADGE multipliers -->
+              <span id="multBadge" class="px-2 py-1 rounded-lg text-xs border hidden"></span>
+            </div>
           </div>
           <div class="grid-col">
             <div>
@@ -212,6 +216,8 @@
     let ohlcSubId = null;
     let currentSymbol = null;
     let currentGranularity = 60; // 1m por padrão
+    // controle intrabar via ticks
+    let liveBar = null; // {time, open, high, low, close}
     // ============================
 
     const els = {
@@ -239,6 +245,7 @@
       refreshBalanceBtn: document.getElementById('refreshBalanceBtn'),
       tfSelect: document.getElementById('tfSelect'),
       chartWrap: document.getElementById('chartWrap'),
+      multBadge: document.getElementById('multBadge'),
     };
 
     // ------------- Helpers UI -------------
@@ -260,8 +267,19 @@
     }
     function toast(msg,isErr=false){
       console[isErr?'error':'log'](msg);
-      // também mostra no status de posição se for erro
       if(isErr) els.posStatus.textContent = `Erro: ${msg}`;
+    }
+    function setBadge(available){
+      const b = els.multBadge;
+      if(!b) return;
+      b.classList.remove('hidden');
+      if(available){
+        b.textContent = 'Multipliers: disponível';
+        b.className = 'px-2 py-1 rounded-lg text-xs border bg-emerald-500/10 text-emerald-300 border-emerald-500/30';
+      }else{
+        b.textContent = 'Multipliers: indisponível';
+        b.className = 'px-2 py-1 rounded-lg text-xs border bg-rose-500/10 text-rose-300 border-rose-500/30';
+      }
     }
 
     // ------------- OAuth: captura tokens do redirect -------------
@@ -348,16 +366,34 @@
           subscribeTicks(firstSym);
           currentSymbol = firstSym;
           loadCandles(currentSymbol, currentGranularity);
-          checkMultipliersAvailability(currentSymbol); // <== garante que dá pra operar
+          checkMultipliersAvailability(currentSymbol);
         }
       }
 
-      // ticks (formatação pedida: remover 2 zeros finais)
-      if(data.msg_type==='tick'){
+      // ticks (formatação pedida + intrabar)
+      if(data.msg_type==='tick' && data.tick){
         const q = Number(data.tick.quote);
+        const epoch = Number(data.tick.epoch);
+        const sym = data.tick.symbol;
         let s = q.toFixed(5);
         if(s.endsWith('00')) s = s.slice(0,-2);
         els.tickPrice.textContent = s;
+
+        // apenas atualiza vela se for o símbolo do gráfico
+        if(sym === currentSymbol && candleSeries){
+          const bucket = Math.floor(epoch / currentGranularity) * currentGranularity;
+          if(!liveBar || liveBar.time !== bucket){
+            // inicia nova vela
+            liveBar = { time: bucket, open: q, high: q, low: q, close: q };
+          }else{
+            // atualiza extremos/fecho
+            if(q > liveBar.high) liveBar.high = q;
+            if(q < liveBar.low)  liveBar.low  = q;
+            liveBar.close = q;
+          }
+          candleSeries.update(liveBar);
+          lwChart.timeScale().scrollToRealTime();
+        }
       }
 
       // histórico candles
@@ -371,17 +407,17 @@
         }));
         if(candleSeries){
           candleSeries.setData(bars);
-          // enquadra e rola pro fim
+          liveBar = bars[bars.length - 1] || null; // base para intrabar
           lwChart.timeScale().fitContent();
           lwChart.timeScale().scrollToRealTime();
         }
       }
 
-      // stream OHLC (tempo real)
+      // stream OHLC (confirma fechamento de velas)
       if(data.msg_type==='ohlc' && data.ohlc){
         if(!candleSeries) return;
         const c = data.ohlc;
-        const t = Number(c.epoch || c.open_time); // compat
+        const t = Number(c.open_time); // tempo de abertura do candle
         const bar = {
           time: t,
           open: Number(c.open),
@@ -390,6 +426,8 @@
           close: Number(c.close),
         };
         candleSeries.update(bar);
+        // se o servidor fechou a vela, reinicia liveBar no próximo tick
+        if(c.complete) liveBar = null;
         lwChart.timeScale().scrollToRealTime();
       }
 
@@ -443,13 +481,14 @@
         }
       }
 
-      // contracts_for -> habilita/desabilita UP/DOWN
+      // contracts_for -> habilita/desabilita UP/DOWN + badge
       if(data.msg_type==='contracts_for' && data.contracts_for){
         const a = data.contracts_for.available || [];
         const types = a.flatMap(x => (x.contract_type || []));
         const hasMult = types.includes('MULTUP') || types.includes('MULTDOWN');
         els.upBtn.disabled = !hasMult || !authorized;
         els.downBtn.disabled = !hasMult || !authorized;
+        setBadge(hasMult);
         if(!hasMult){
           els.posStatus.textContent = 'Este símbolo não suporta Multipliers. Escolha outro.';
         }
@@ -530,8 +569,8 @@
         contract_type: direction==='up' ? 'MULTUP' : 'MULTDOWN',
         currency,
         symbol,
-        multiplier,
-        product_type: 'multipliers' // <-- importante para Multipliers
+        multiplier
+        // *** IMPORTANTE: NÃO enviar product_type aqui ***
       };
       if(Object.keys(limit_order).length) req.limit_order = limit_order;
       const dc = els.dcInput.value;
@@ -569,6 +608,7 @@
       currentSymbol = symbol;
       currentGranularity = Number(granularitySec||60);
 
+      liveBar = null;
       if(candleSeries) candleSeries.setData([]);
 
       if(ohlcSubId){
