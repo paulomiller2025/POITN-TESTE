@@ -12,40 +12,40 @@
       --bg:#0b1220;--card:#121a2b;--muted:#9fb0d0;--ok:#22c55e;--warn:#eab308;--err:#ef4444;--ink:#e6edf7;--soft:#1b2740
     }
     body{background:var(--bg);color:var(--ink)}
-    .card{background:var(--card);border:1px solid #1e2a46}
-    .pill{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.08)}
-    .btn{transition:transform .05s ease}
+    .card{background:var(--card);border:1px solid #1e2a46; border-radius:1rem; box-shadow:0 10px 20px rgba(0,0,0,.25)}
+    .pill{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.08); border-radius:.8rem}
+    .btn{transition:transform .05s ease,opacity .2s}
     .btn:active{transform:translateY(1px)}
-    .glass{backdrop-filter: blur(8px); background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06)}
-    .grid-col{display:grid;grid-template-columns:1fr 1fr;gap:.75rem}
+    .glass{backdrop-filter: blur(8px); background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06); border-radius: .9rem}
+    .grid-col{display:grid;grid-template-columns:1fr 1fr;gap:.85rem}
     @media (min-width:1024px){.grid-col-3{grid-template-columns:repeat(3,1fr)}}
 
     /* Selects com texto preto ao focar/abrir */
-    select:focus, select:active { color:#000 !important; }
+    select:focus, select:active { color:#000 !important; background:#fff !important; }
     select option { color:#000; }
 
     /* Layout principal: 3 colunas (esq — centro — dir) com mais espaço ao gráfico */
     .layout-3 {
       display: grid;
-      grid-template-columns: 340px 1fr 380px;
-      gap: 1.25rem;
+      grid-template-columns: 360px 1fr 420px;
+      gap: 1.5rem;
       align-items: stretch;
     }
-    @media (max-width: 1280px){
-      .layout-3 { grid-template-columns: 300px 1fr 340px; }
+    @media (max-width: 1400px){
+      .layout-3 { grid-template-columns: 320px 1fr 380px; }
     }
     @media (max-width: 1024px){
       .layout-3 { grid-template-columns: 1fr; }
     }
 
-    /* Altura do gráfico (mais alto) */
-    #chartWrap{ height: 560px; }
+    /* Gráfico mais alto/largo */
+    #chartWrap{ height: 620px; }
     #chart{ width:100%; height:100%; }
   </style>
 </head>
 <body>
   <header class="sticky top-0 z-50 border-b border-slate-800 bg-[color:var(--soft)]">
-    <div class="max-w-[1600px] mx-auto px-4 py-4 flex items-center justify-between">
+    <div class="max-w-[1800px] mx-auto px-6 py-4 flex items-center justify-between">
       <div class="flex items-center gap-3">
         <div class="w-9 h-9 rounded-xl bg-indigo-500/20 flex items-center justify-center">
           <span class="text-indigo-300 font-bold">P</span>
@@ -62,9 +62,9 @@
     </div>
   </header>
 
-  <main class="max-w-[1600px] mx-auto px-4 py-6 space-y-4">
+  <main class="max-w-[1800px] mx-auto px-6 py-6 space-y-5">
     <!-- STATUS / CONTAS -->
-    <section class="card rounded-2xl p-4">
+    <section class="card p-4">
       <div class="flex flex-wrap items-center gap-4 justify-between">
         <div class="flex items-center gap-3">
           <div class="w-10 h-10 rounded-2xl bg-emerald-500/15 flex items-center justify-center">
@@ -81,14 +81,14 @@
         <!-- LINHA ÚNICA: Conta + Tipo + Saldo -->
         <div class="flex flex-wrap items-center gap-3">
           <label class="text-sm text-slate-300">Conta:</label>
-          <select id="accountSelect" class="pill px-3 py-2 rounded-xl text-sm text-slate-200 bg-transparent" disabled></select>
+          <select id="accountSelect" class="pill px-3 py-2 text-sm text-slate-200 bg-transparent min-w-[220px]" disabled></select>
 
           <span id="acctType" class="text-xs px-2 py-1 rounded-md bg-white/10 border border-white/10 text-slate-200">
             —
           </span>
 
           <label class="text-sm text-slate-300">Saldo:</label>
-          <input id="balanceInput" class="pill px-3 py-2 rounded-xl text-sm bg-transparent text-slate-200 w-44 text-right" placeholder="—" disabled />
+          <input id="balanceInput" class="pill px-3 py-2 text-sm bg-transparent text-slate-200 w-44 text-right" placeholder="—" disabled />
         </div>
       </div>
     </section>
@@ -98,12 +98,12 @@
       <!-- ESQUERDA: MERCADO + POSIÇÃO -->
       <div class="space-y-4">
         <!-- MERCADO -->
-        <div class="card rounded-2xl p-4">
+        <div class="card p-4">
           <div class="text-xs uppercase tracking-wide text-slate-400 mb-2">Mercado</div>
           <div class="space-y-3">
             <div>
               <label class="text-sm text-slate-300">Símbolo (Volatility/Synthetic)</label>
-              <select id="symbolSelect" class="pill w-full px-3 py-2 rounded-xl text-sm bg-transparent text-slate-200" disabled>
+              <select id="symbolSelect" class="pill w-full px-3 py-2 text-sm bg-transparent text-slate-200" disabled>
                 <option>— carregando —</option>
               </select>
             </div>
@@ -111,7 +111,7 @@
         </div>
 
         <!-- POSIÇÃO -->
-        <div class="card rounded-2xl p-4">
+        <div class="card p-4">
           <div class="text-xs uppercase tracking-wide text-slate-400">Posição</div>
           <div id="posStatus" class="text-sm mt-1">Nenhuma posição aberta.</div>
           <div class="flex items-center justify-between mt-3">
@@ -122,7 +122,7 @@
       </div>
 
       <!-- CENTRO: GRÁFICO -->
-      <div class="card rounded-2xl p-4">
+      <div class="card p-4">
         <div class="flex items-center justify-between mb-3">
           <div class="text-xs uppercase tracking-wide text-slate-400">Gráfico de Velas</div>
           <div class="flex items-center gap-2">
@@ -159,17 +159,17 @@
 
       <!-- DIREITA: PARÂMETROS + AÇÃO -->
       <div class="space-y-4">
-        <div class="card rounded-2xl p-4">
+        <div class="card p-4">
           <div class="text-xs uppercase tracking-wide text-slate-400 mb-2">Parâmetros</div>
           <div class="space-y-3">
             <div class="grid-col">
               <div>
                 <label class="text-sm text-slate-300">Stake</label>
-                <input id="stakeInput" type="number" min="1" step="1" value="5" class="pill w-full px-3 py-2 rounded-xl bg-transparent text-slate-200" disabled />
+                <input id="stakeInput" type="number" min="1" step="1" value="5" class="pill w-full px-3 py-2 bg-transparent text-slate-200" disabled />
               </div>
               <div>
                 <label class="text-sm text-slate-300">Multiplier</label>
-                <select id="multInput" class="pill w-full px-3 py-2 rounded-xl bg-transparent text-slate-200" disabled>
+                <select id="multInput" class="pill w-full px-3 py-2 bg-transparent text-slate-200" disabled>
                   <option value="10" selected>x10</option>
                   <option value="50">x50</option>
                   <option value="100">x100</option>
@@ -186,17 +186,17 @@
             <div class="grid-col">
               <div>
                 <label class="text-sm text-slate-300">Take Profit (opcional)</label>
-                <input id="tpInput" type="number" min="1" step="1" placeholder="ex: 150" class="pill w-full px-3 py-2 rounded-xl bg-transparent text-slate-200" disabled />
+                <input id="tpInput" type="number" min="1" step="1" placeholder="ex: 150" class="pill w-full px-3 py-2 bg-transparent text-slate-200" disabled />
               </div>
               <div>
                 <label class="text-sm text-slate-300">Stop Loss (opcional)</label>
-                <input id="slInput" type="number" min="1" step="1" placeholder="ex: 130" class="pill w-full px-3 py-2 rounded-xl bg-transparent text-slate-200" disabled />
+                <input id="slInput" type="number" min="1" step="1" placeholder="ex: 130" class="pill w-full px-3 py-2 bg-transparent text-slate-200" disabled />
               </div>
             </div>
 
             <div>
               <label class="text-sm text-slate-300">Deal Cancellation</label>
-              <select id="dcInput" class="pill w-full px-3 py-2 rounded-xl bg-transparent text-slate-200" disabled>
+              <select id="dcInput" class="pill w-full px-3 py-2 bg-transparent text-slate-200" disabled>
                 <option value="">Desligado</option>
                 <option value="5m">5m</option>
                 <option value="10m">10m</option>
@@ -208,7 +208,7 @@
           </div>
         </div>
 
-        <div class="card rounded-2xl p-4">
+        <div class="card p-4">
           <div class="text-xs uppercase tracking-wide text-slate-400 mb-2">Ação</div>
           <div class="flex gap-3">
             <button id="upBtn" class="btn flex-1 px-4 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-40" disabled>UP (MULTUP)</button>
@@ -226,8 +226,14 @@
     // ================== CONFIG ==================
     const APP_ID = 98640; // POINT
     const WS_URL = `wss://ws.derivws.com/websockets/v3?app_id=${APP_ID}`;
-    const REDIRECT_URL = window.location.origin + window.location.pathname; // para OAuth
-    const OAUTH_URL = `https://oauth.deriv.com/oauth2/authorize?app_id=${APP_ID}&redirect_uri=${encodeURIComponent(REDIRECT_URL)}`;
+    // tenta com redirect_uri se o site estiver em http/https e você tiver configurado isso no App da Deriv
+    const CAN_USE_REDIRECT = location.protocol === 'http:' || location.protocol === 'https:';
+    const REDIRECT_URL = CAN_USE_REDIRECT ? (window.location.origin + window.location.pathname) : '';
+    const OAUTH_WITH_REDIRECT = `https://oauth.deriv.com/oauth2/authorize?app_id=${APP_ID}&redirect_uri=${encodeURIComponent(REDIRECT_URL)}`;
+    // fallback (usa o Redirect cadastrado no App da Deriv)
+    const OAUTH_FALLBACK = `https://oauth.deriv.com/oauth2/authorize?app_id=${APP_ID}`;
+    const OAUTH_URL = CAN_USE_REDIRECT ? OAUTH_WITH_REDIRECT : OAUTH_FALLBACK;
+
     const DEFAULT_SYMBOL = '1HZ100V'; // Volatility 100 (1s)
     let CANDLE_GRANULARITY = 60; // padrão 1m
     // ============================================
@@ -312,18 +318,28 @@
     }
     function toast(msg,isErr=false){ console[isErr?'error':'log'](msg); }
 
-    // ------------- OAuth: captura tokens do redirect -------------
-    function extractTokensFromUrl(){
-      const q = new URLSearchParams(location.search);
+    // ------------- OAuth: captura tokens do redirect (query e hash) -------------
+    function parseParams(str){
+      const p = new URLSearchParams(str);
       const tokens = [];
       for (let i=1;i<=10;i++){
-        const acct = q.get(`acct${i}`), token = q.get(`token${i}`), cur = q.get(`cur${i}`);
+        const acct = p.get(`acct${i}`) || p.get(`loginid${i}`);
+        const token = p.get(`token${i}`);
+        const cur = p.get(`cur${i}`) || p.get(`currency${i}`);
         if(acct && token){
           tokens.push({account:acct.toUpperCase(), token, currency:(cur||'USD').toUpperCase()});
         }
       }
+      return tokens;
+    }
+    function extractTokensFromUrl(){
+      // tokens podem vir em ? e/ou # (hash)
+      const qTokens = parseParams(location.search.startsWith('?') ? location.search.slice(1) : '');
+      const hTokens = parseParams(location.hash.startsWith('#') ? location.hash.slice(1) : '');
+      const tokens = [...qTokens, ...hTokens];
       if(tokens.length){
         localStorage.setItem('POINT_TOKENS', JSON.stringify(tokens));
+        // limpa barra
         history.replaceState({}, document.title, location.pathname);
       }
     }
@@ -405,8 +421,6 @@
       // ticks -> linha no gráfico
       if(data.msg_type==='tick'){
         const q = Number(data.tick.quote);
-        // opcional: remover dois zeros finais na label de preço (não exibimos fora do gráfico)
-        // atualiza linha de ticks
         tickSeries.update({ time: Number(data.tick.epoch), value: q });
       }
 
@@ -476,8 +490,7 @@
 
     function updateAcctType(loginid){
       if(!loginid){ els.acctType.textContent='—'; return; }
-      // CR... = real; VRTC... = demo
-      const isDemo = /^VRTC/i.test(loginid) || /VRTC/i.test((localStorage.getItem('POINT_SELECTED')||'')); 
+      const isDemo = /^VRTC/i.test(loginid);
       els.acctType.textContent = isDemo ? 'Conta Demo' : 'Conta Real';
     }
 
@@ -504,7 +517,7 @@
 
     function subscribeTicks(symbol){
       if(tickSubId){ send({ forget: tickSubId }); tickSubId=null; }
-      tickSeries.setData([]); // limpa linha
+      tickSeries.setData([]);
       send({ ticks: symbol, subscribe: 1 });
       ws.addEventListener('message', function once(e){
         try{
@@ -606,7 +619,14 @@
     }
 
     // ------------- Eventos UI -------------
-    els.loginBtn.onclick = ()=>{ window.location.href = OAUTH_URL; };
+    els.loginBtn.onclick = ()=>{
+      if(!CAN_USE_REDIRECT){
+        alert('Para conectar via OAuth, abra este arquivo por http/https (ex.: usando Live Server) — o protocolo file:// bloqueia o fluxo.');
+      }
+      // tenta com redirect_uri; se houver erro de navegação, o fallback ainda funciona pois o servidor da Deriv valida o redirect
+      window.location.href = OAUTH_URL;
+    };
+
     els.logoutBtn.onclick = ()=>{
       cleanupPosition();
       if(ws && ws.readyState===1) ws.close();
@@ -682,7 +702,7 @@
         connectWS();
         authorize(first.token, first.account, first.currency);
       } else {
-        connectWS();
+        connectWS(); // mantém WS pronto; ao voltar do OAuth, os tokens serão lidos
       }
     }
 
