@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>POINT — Multipliers (Deriv)</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <!-- carrega primeiro; mesmo que falhe, código abaixo está protegido -->
   <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
   <style>
     :root{ --bg:#0b1220;--card:#121a2b;--ink:#e6edf7;--soft:#1b2740 }
@@ -18,6 +19,7 @@
     #chartWrap{height:600px} #chart{width:100%;height:100%}
     select:focus,select:active{color:#000!important;background:#fff!important}
     select option{color:#000}
+    #dbg{position:fixed;right:8px;bottom:8px;max-width:44ch;font:12px/1.35 ui-monospace,monospace;background:#0b1220cc;color:#cbd5e1;border:1px solid #334155;border-radius:.5rem;padding:.5rem .6rem;z-index:9999;display:none}
   </style>
 </head>
 <body>
@@ -40,6 +42,8 @@
 </header>
 
 <main class="max-w-[1600px] mx-auto px-6 py-6 space-y-4">
+  <div id="dbg"></div>
+
   <!-- STATUS -->
   <section class="card p-4">
     <div class="flex flex-wrap items-center gap-4 justify-between">
@@ -146,6 +150,10 @@
 </main>
 
 <script>
+/* ============== DEBUG OVERLAY (ajuda a ver o que acontece) ============== */
+const DBG = document.getElementById('dbg');
+function dbg(msg){ try{DBG.style.display='block'; DBG.textContent = `[${new Date().toLocaleTimeString()}] ` + msg + '\\n' + DBG.textContent;}catch{} }
+
 /* ================== CONFIG ================== */
 const APP_ID = 98640;
 const WS_URL = `wss://ws.derivws.com/websockets/v3?app_id=${APP_ID}`;
@@ -194,43 +202,25 @@ function setAuthUI(on){
   els.loginNote.textContent = on ? 'Autorizado.' : 'Clique em Conectar para autorizar.';
   if(dis){ els.balanceInput.value=''; els.balanceInput.placeholder='—'; els.acctType.textContent='—'; }
 }
-function toast(m){ console.log(m); }
+function isDemo(loginid){ return /^VRTC/i.test(loginid); }
 
-/* ---- Tokens ---- */
+/* ---- Tokens: CAPTURA ANTES DE QUALQUER OUTRA COISA ---- */
 function parseTokens(str){
   const out=[], p=new URLSearchParams(str||'');
-  // JSON list em "tokens"/"oauth_tokens"
-  const rawList = p.get('tokens') || p.get('oauth_tokens');
-  if(rawList){
-    try{
-      const arr = JSON.parse(decodeURIComponent(rawList));
-      if(Array.isArray(arr)){
-        arr.forEach(t=> t && (t.token||t.access_token) && out.push({
-          token: t.token || t.access_token,
-          account: (t.loginid||t.account||'').toUpperCase()||null,
-          currency: (t.currency||'USD').toUpperCase()
-        }));
-      }
-    }catch{}
-  }
-  // Simples
+  // simples
   ['access_token','token','oauth_token','auth_token'].forEach(k=>{
     const v=p.get(k);
     if(v) out.push({token:v, account:(p.get('loginid')||p.get('acct')||'').toUpperCase()||null, currency:(p.get('currency')||p.get('cur')||'USD').toUpperCase()});
   });
-  // Numerados
-  for(let i=1;i<=10;i++){
+  // numerados (formato da tua URL: acct1/token1/cur1, acct2/token2/cur2)
+  for(let i=1;i<=15;i++){
     const t=p.get(`token${i}`)||p.get(`access_token${i}`)||p.get(`oauth_token${i}`);
-    if(t) out.push({token:t, account:(p.get(`loginid${i}`)||p.get(`acct${i}`)||'').toUpperCase()||null, currency:(p.get(`currency${i}`)||p.get(`cur${i}`)||'USD').toUpperCase()});
+    const a=p.get(`acct${i}`)||p.get(`loginid${i}`);
+    const c=p.get(`cur${i}`)||p.get(`currency${i}`);
+    if(t){ out.push({token:t, account:(a||'').toUpperCase()||null, currency:(c||'USD').toUpperCase()}); }
   }
-  // Heurística
-  p.forEach((val,key)=>{
-    if(/token/i.test(key) && typeof val==='string' && val.length>20){
-      if(!out.find(o=>o.token===val)){
-        out.push({token:val, account:(p.get('loginid')||p.get('acct')||'').toUpperCase()||null, currency:(p.get('currency')||p.get('cur')||'USD').toUpperCase()});
-      }
-    }
-  });
+  // fallback heurístico
+  p.forEach((v,k)=>{ if(/token/i.test(k) && typeof v==='string' && v.length>15){ out.push({token:v, account:(p.get('loginid')||p.get('acct')||'').toUpperCase()||null, currency:(p.get('currency')||p.get('cur')||'USD').toUpperCase()}); }});
   return out;
 }
 function extractTokensFromUrl(){
@@ -240,6 +230,9 @@ function extractTokensFromUrl(){
   if(tokens.length){
     localStorage.setItem('POINT_TOKENS', JSON.stringify(tokens));
     history.replaceState({}, document.title, BASE_URL);
+    dbg('Tokens capturados: '+tokens.map(t=>`${t.account||'?'}:${t.currency||'USD'}`).join(', '));
+  } else {
+    dbg('Nenhum token encontrado na URL.');
   }
 }
 function getStoredTokens(){ try{return JSON.parse(localStorage.getItem('POINT_TOKENS')||'[]')}catch(e){return[]} }
@@ -255,52 +248,65 @@ function connectWS(){
     if(tokens.length){
       const sel = JSON.parse(localStorage.getItem('POINT_SELECTED')||'null') || tokens[0];
       selectedToken = sel.token;
+      dbg('WS aberto. Enviando authorize…');
       authorize(sel.token, sel.account, sel.currency);
+    } else {
+      dbg('WS aberto, porém sem tokens salvos.');
     }
   };
-  ws.onclose = ()=>{ setConnectedUI(false); setAuthUI(false); };
+  ws.onclose = ()=>{ setConnectedUI(false); setAuthUI(false); dbg('WS fechado.'); };
   ws.onmessage = handleMessage;
-  ws.onerror = ()=>console.error('WebSocket error');
+  ws.onerror = (e)=>{ dbg('WS erro. Verifique rede/app_id.'); console.error(e); };
 }
-function send(msg){ if(!ws || ws.readyState!==1){ console.error('WS não conectado'); return; } ws.send(JSON.stringify(msg)); }
+function send(msg){ if(!ws || ws.readyState!==1){ dbg('WS não conectado'); return; } ws.send(JSON.stringify(msg)); }
 
-/* ---- Chart ---- */
-(function initChart(){
-  const container=document.getElementById('chart');
-  chart = LightweightCharts.createChart(container, {
-    layout:{background:{type:'solid',color:'#0b1220'},textColor:'#cbd5e1'},
-    grid:{vertLines:{color:'#1e293b'},horzLines:{color:'#1e293b'}},
-    crosshair:{mode:0}, rightPriceScale:{borderColor:'#334155'}, timeScale:{borderColor:'#334155'},
-    handleScroll:true, handleScale:true
-  });
-  candleSeries = chart.addCandlestickSeries({
-    upColor:'#22c55e', downColor:'#ef4444',
-    borderDownColor:'#ef4444', borderUpColor:'#22c55e',
-    wickDownColor:'#ef4444', wickUpColor:'#22c55e'
-  });
-  tickSeries = chart.addLineSeries({ lineWidth: 1.5 });
-  function resize(){ const wrap=document.getElementById('chartWrap'); chart.applyOptions({width:wrap.clientWidth,height:wrap.clientHeight}); }
-  window.addEventListener('resize', resize); setTimeout(resize,10);
+/* ---- Chart (protegido, não bloqueia o app) ---- */
+(function initChartSafe(){
+  try{
+    if(!window.LightweightCharts){ dbg('Lib de gráfico ainda não disponível (tentando usar fallback)…'); }
+    const container=document.getElementById('chart');
+    if(!window.LightweightCharts){ throw new Error('LightweightCharts indefinido'); }
+    chart = LightweightCharts.createChart(container, {
+      layout:{background:{type:'solid',color:'#0b1220'},textColor:'#cbd5e1'},
+      grid:{vertLines:{color:'#1e293b'},horzLines:{color:'#1e293b'}},
+      crosshair:{mode:0}, rightPriceScale:{borderColor:'#334155'}, timeScale:{borderColor:'#334155'},
+      handleScroll:true, handleScale:true
+    });
+    candleSeries = chart.addCandlestickSeries({
+      upColor:'#22c55e', downColor:'#ef4444',
+      borderDownColor:'#ef4444', borderUpColor:'#22c55e',
+      wickDownColor:'#ef4444', wickUpColor:'#22c55e'
+    });
+    tickSeries = chart.addLineSeries({ lineWidth: 1.5 });
+    function resize(){ const wrap=document.getElementById('chartWrap'); chart.applyOptions({width:wrap.clientWidth,height:wrap.clientHeight}); }
+    window.addEventListener('resize', resize); setTimeout(resize,10);
+    dbg('Gráfico inicializado.');
+  }catch(err){
+    dbg('Gráfico não inicializado (seguindo sem gráfico): '+err.message);
+  }
 })();
 
 /* ---- Mensagens ---- */
 function handleMessage(evt){
   const data = JSON.parse(evt.data);
-  if(data.error){ console.error('API error:', data.error); els.posStatus.textContent = `Erro: ${data.error.message}`; return; }
+  if(data.error){ console.error('API error:', data.error); els.posStatus.textContent = `Erro: ${data.error.message}`; dbg('API erro: '+data.error.message); return; }
 
   if(data.msg_type==='authorize'){
     loginId = data.authorize.loginid;
     currency = data.authorize.currency || 'USD';
     setAuthUI(true);
+    dbg('Authorize OK: '+loginId);
+
     // dropdown de conta
     els.accountSelect.innerHTML='';
     const o=document.createElement('option'); o.value=loginId; o.textContent=`${loginId} • ${currency}`; els.accountSelect.appendChild(o);
     els.accountSelect.disabled=false;
-    els.acctType.textContent = /^VRTC/i.test(loginId) ? 'Conta Demo' : 'Conta Real';
-    // lembra seleção
+    els.acctType.textContent = isDemo(loginId) ? 'Conta Demo' : 'Conta Real';
+
+    // lembrar seleção
     const tokens=getStoredTokens(); const chosen=tokens.find(t=>t.token===selectedToken) || {token:selectedToken, account:loginId, currency};
     localStorage.setItem('POINT_SELECTED', JSON.stringify(chosen));
-    // saldo, símbolos, streams
+
     subscribeBalance();
     loadActiveSymbols();
   }
@@ -313,16 +319,14 @@ function handleMessage(evt){
     syms.forEach(s=>{ const op=document.createElement('option'); op.value=s.symbol; op.textContent=s.display; els.symbolSelect.appendChild(op); });
     els.symbolSelect.value = syms.find(s=>s.symbol===DEFAULT_SYMBOL)?.symbol || syms[0]?.symbol || '';
     if(els.symbolSelect.value){ subscribeCandles(els.symbolSelect.value); subscribeTicks(els.symbolSelect.value); }
+    dbg(`Símbolos carregados (${syms.length}). Selecionado: ${els.symbolSelect.value}`);
   }
 
-  if(data.msg_type==='tick' && tickSeries){
-    tickSeries.update({ time:Number(data.tick.epoch), value:Number(data.tick.quote) });
-  }
-
+  if(data.msg_type==='tick' && tickSeries){ tickSeries.update({ time:+data.tick.epoch, value:+data.tick.quote }); }
   if(data.msg_type==='candles' && candleSeries){
     const arr = Array.isArray(data.candles) ? data.candles : [data.candles];
     const mapped = arr.map(c=>({time:+c.epoch, open:+c.open, high:+c.high, low:+c.low, close:+c.close}));
-    if(Array.isArray(data.candles)){ candleSeries.setData(mapped); chart.timeScale().fitContent(); } else { candleSeries.update(mapped[0]); }
+    if(Array.isArray(data.candles)){ candleSeries.setData(mapped); chart?.timeScale().fitContent(); } else { candleSeries.update(mapped[0]); }
   }
 
   if(data.msg_type==='proposal' && data.proposal?.id){
@@ -354,7 +358,7 @@ function authorize(token, acct, cur){ selectedToken=token; currency=(cur||'USD')
 function loadActiveSymbols(){ send({ active_symbols:'brief', product_type:'basic' }); }
 function subscribeTicks(symbol){
   if(tickSubId){ send({ forget: tickSubId }); tickSubId=null; }
-  tickSeries.setData([]);
+  tickSeries?.setData([]);
   send({ ticks:symbol, subscribe:1 });
   ws.addEventListener('message', function once(e){ try{const d=JSON.parse(e.data); if(d.msg_type==='tick'&&d.subscription?.id){ tickSubId=d.subscription.id; ws.removeEventListener('message', once);} }catch{} });
 }
@@ -380,33 +384,33 @@ els.logoutBtn.onclick = ()=>{
   if(tickSubId){ send({ forget: tickSubId }); tickSubId=null; }
   if(candleSubId){ send({ forget: candleSubId }); candleSubId=null; }
   clearTokens(); selectedToken=null; loginId=null; setAuthUI(false);
-  els.accountSelect.innerHTML=''; candleSeries.setData([]); tickSeries.setData([]);
+  els.accountSelect.innerHTML=''; candleSeries?.setData([]); tickSeries?.setData([]); dbg('Sessão limpa.');
 };
 els.accountSelect.onchange = ()=>{
   const opt = els.accountSelect.value; if(!opt) return;
   const tokens = getStoredTokens(); const chosen = tokens.find(t=>t.account===opt) || tokens[0];
   if(!chosen) return;
   localStorage.setItem('POINT_SELECTED', JSON.stringify(chosen));
-  els.acctType.textContent = /^VRTC/i.test(opt) ? 'Conta Demo' : 'Conta Real';
+  els.acctType.textContent = isDemo(opt) ? 'Conta Demo' : 'Conta Real';
   if(ws && ws.readyState===1) authorize(chosen.token, chosen.account, chosen.currency);
   else connectWS();
   setTimeout(()=>subscribeBalance(), 200);
 };
 els.symbolSelect.onchange = e=>{ const sym=e.target.value; if(sym){ subscribeCandles(sym); subscribeTicks(sym); } };
 els.timeframeSelect.onchange = e=>{ CANDLE_GRANULARITY = Number(e.target.value||60); const sym=els.symbolSelect.value||DEFAULT_SYMBOL; if(sym) subscribeCandles(sym); };
-document.getElementById('zoomInBtn').onclick  = ()=>{ const s=chart.timeScale().getBarSpacing(); chart.timeScale().setBarSpacing(s*0.8); };
-document.getElementById('zoomOutBtn').onclick = ()=>{ const s=chart.timeScale().getBarSpacing(); chart.timeScale().setBarSpacing(s*1.25); };
-document.getElementById('zoomFitBtn').onclick  = ()=>{ chart.timeScale().fitContent(); };
+document.getElementById('zoomInBtn').onclick  = ()=>{ if(!chart) return; const s=chart.timeScale().getBarSpacing(); chart.timeScale().setBarSpacing(s*0.8); };
+document.getElementById('zoomOutBtn').onclick = ()=>{ if(!chart) return; const s=chart.timeScale().getBarSpacing(); chart.timeScale().setBarSpacing(s*1.25); };
+document.getElementById('zoomFitBtn').onclick  = ()=>{ if(!chart) return; chart.timeScale().fitContent(); };
 
-/* ---- Boot ---- */
+/* ---- Boot: 1) captura tokens; 2) popula contas; 3) conecta WS ---- */
 (function init(){
-  extractTokensFromUrl();                  // captura tokens ao voltar do OAuth
-  // lista contas já conhecidas (se vierem com loginid nos params)
+  extractTokensFromUrl();                         // 1
   const tokens=getStoredTokens();
-  els.accountSelect.innerHTML='';
+  els.accountSelect.innerHTML='';                 // 2
   tokens.forEach(t=>{ if(t.account){ const o=document.createElement('option'); o.value=t.account; o.textContent=`${t.account} • ${t.currency||'USD'}`; els.accountSelect.appendChild(o);} });
   if(els.accountSelect.options.length) els.accountSelect.disabled=false;
-  connectWS();                             // abre WS e autoriza automaticamente se houver token salvo
+  if(tokens.length){ localStorage.setItem('POINT_SELECTED', JSON.stringify(tokens[0])); }
+  connectWS();                                    // 3
 })();
 </script>
 </body>
