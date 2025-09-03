@@ -5,39 +5,22 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>POINT — Multipliers (Deriv)</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <!-- Tentativa 1: CDN principal -->
+  <!-- CDN principal do gráfico (não bloqueia OAuth se falhar) -->
   <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
   <style>
-    :root{
-      --bg:#0b1220;--card:#121a2b;--muted:#9fb0d0;--ok:#22c55e;--warn:#eab308;--err:#ef4444;--ink:#e6edf7;--soft:#1b2740
-    }
+    :root{ --bg:#0b1220;--card:#121a2b;--muted:#9fb0d0;--ok:#22c55e;--warn:#eab308;--err:#ef4444;--ink:#e6edf7;--soft:#1b2740 }
     body{background:var(--bg);color:var(--ink)}
-    .card{background:var(--card);border:1px solid #1e2a46; border-radius:1rem; box-shadow:0 10px 20px rgba(0,0,0,.25)}
-    .pill{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.08); border-radius:.8rem}
+    .card{background:var(--card);border:1px solid #1e2a46;border-radius:1rem;box-shadow:0 10px 20px rgba(0,0,0,.25)}
+    .pill{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.08);border-radius:.8rem}
     .btn{transition:transform .05s ease,opacity .2s}
     .btn:active{transform:translateY(1px)}
-    .glass{backdrop-filter: blur(8px); background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06); border-radius: .9rem}
     .grid-col{display:grid;grid-template-columns:1fr 1fr;gap:.85rem}
-    @media (min-width:1024px){.grid-col-3{grid-template-columns:repeat(3,1fr)}}
-
-    select:focus, select:active { color:#000 !important; background:#fff !important; }
-    select option { color:#000; }
-
-    .layout-3 {
-      display: grid;
-      grid-template-columns: 360px 1fr 420px;
-      gap: 1.5rem;
-      align-items: stretch;
-    }
-    @media (max-width: 1400px){
-      .layout-3 { grid-template-columns: 320px 1fr 380px; }
-    }
-    @media (max-width: 1024px){
-      .layout-3 { grid-template-columns: 1fr; }
-    }
-
-    #chartWrap{ height: 620px; }
-    #chart{ width:100%; height:100%; }
+    select:focus,select:active{color:#000!important;background:#fff!important}
+    select option{color:#000}
+    .layout-3{display:grid;grid-template-columns:360px 1fr 420px;gap:1.5rem;align-items:stretch}
+    @media(max-width:1400px){.layout-3{grid-template-columns:320px 1fr 380px}}
+    @media(max-width:1024px){.layout-3{grid-template-columns:1fr}}
+    #chartWrap{height:620px} #chart{width:100%;height:100%}
   </style>
 </head>
 <body>
@@ -60,6 +43,9 @@
   </header>
 
   <main class="max-w-[1800px] mx-auto px-6 py-6 space-y-5">
+    <!-- ALERTAS VISÍVEIS -->
+    <div id="uiAlert" class="hidden px-4 py-3 rounded-lg border text-sm"></div>
+
     <!-- STATUS / CONTAS -->
     <section class="card p-4">
       <div class="flex flex-wrap items-center gap-4 justify-between">
@@ -79,9 +65,7 @@
         <div class="flex flex-wrap items-center gap-3">
           <label class="text-sm text-slate-300">Conta:</label>
           <select id="accountSelect" class="pill px-3 py-2 text-sm text-slate-200 bg-transparent min-w-[220px]" disabled></select>
-
           <span id="acctType" class="text-xs px-2 py-1 rounded-md bg-white/10 border border-white/10 text-slate-200">—</span>
-
           <label class="text-sm text-slate-300">Saldo:</label>
           <input id="balanceInput" class="pill px-3 py-2 text-sm bg-transparent text-slate-200 w-44 text-right" placeholder="—" disabled />
         </div>
@@ -90,9 +74,8 @@
 
     <!-- LAYOUT: ESQ | CENTRO | DIR -->
     <section class="layout-3">
-      <!-- ESQUERDA: MERCADO + POSIÇÃO -->
+      <!-- ESQUERDA -->
       <div class="space-y-4">
-        <!-- MERCADO -->
         <div class="card p-4">
           <div class="text-xs uppercase tracking-wide text-slate-400 mb-2">Mercado</div>
           <div class="space-y-3">
@@ -105,7 +88,6 @@
           </div>
         </div>
 
-        <!-- POSIÇÃO -->
         <div class="card p-4">
           <div class="text-xs uppercase tracking-wide text-slate-400">Posição</div>
           <div id="posStatus" class="text-sm mt-1">Nenhuma posição aberta.</div>
@@ -136,13 +118,11 @@
               <option value="28800">8h</option>
               <option value="86400">1d</option>
             </select>
-
             <div class="flex items-center gap-1 ml-2">
               <button id="zoomInBtn" class="btn px-2 py-1 rounded-md border border-white/10 text-xs">+</button>
               <button id="zoomOutBtn" class="btn px-2 py-1 rounded-md border border-white/10 text-xs">−</button>
               <button id="zoomFitBtn" class="btn px-2 py-1 rounded-md border border-white/10 text-xs">Fit</button>
             </div>
-
             <div class="text-xs text-slate-400 ml-2" id="chartInfo">1m candles • stream</div>
           </div>
         </div>
@@ -151,7 +131,7 @@
         </div>
       </div>
 
-      <!-- DIREITA: PARÂMETROS + AÇÃO -->
+      <!-- DIREITA -->
       <div class="space-y-4">
         <div class="card p-4">
           <div class="text-xs uppercase tracking-wide text-slate-400 mb-2">Parâmetros</div>
@@ -217,22 +197,17 @@
   </main>
 
   <script>
-    // ================== CONFIG ==================
+    /* ================== CONFIG ================== */
     const APP_ID = 98640; // POINT
     const WS_URL = `wss://ws.derivws.com/websockets/v3?app_id=${APP_ID}`;
-
     const BASE_URL = (location.origin + location.pathname).replace(/[#?].*$/,'');
     const CAN_USE_REDIRECT = /^https?:/.test(location.protocol);
-    const OAUTH_URL =
-      `https://oauth.deriv.com/oauth2/authorize?brand=deriv&app_id=${APP_ID}` +
-      `&response_type=token&scope=${encodeURIComponent('read trade')}` +
-      (CAN_USE_REDIRECT ? `&redirect_uri=${encodeURIComponent(BASE_URL)}` : '');
+    const OAUTH_URL = `https://oauth.deriv.com/oauth2/authorize?brand=deriv&app_id=${APP_ID}&response_type=token&scope=${encodeURIComponent('read trade')}${CAN_USE_REDIRECT ? `&redirect_uri=${encodeURIComponent(BASE_URL)}` : ''}`;
+    const DEFAULT_SYMBOL = '1HZ100V';
+    let CANDLE_GRANULARITY = 60;
+    /* =========================================== */
 
-    const DEFAULT_SYMBOL = '1HZ100V'; // Volatility 100 (1s)
-    let CANDLE_GRANULARITY = 60; // 1m
-    // ============================================
-
-    // ======= DOM refs (antes de qualquer gráfico) =======
+    /* ---- DOM ---- */
     const els = {
       loginBtn: document.getElementById('loginBtn'),
       logoutBtn: document.getElementById('logoutBtn'),
@@ -254,412 +229,275 @@
       chartInfo: document.getElementById('chartInfo'),
       timeframeSelect: document.getElementById('timeframeSelect'),
       acctType: document.getElementById('acctType'),
+      uiAlert: document.getElementById('uiAlert'),
     };
 
-    // ======= Liga o botão CONECTAR já (não depende do gráfico) =======
-    els.loginBtn.onclick = () => {
-      if (!CAN_USE_REDIRECT) {
-        alert('Abra em http/https (ex.: GitHub Pages). file:// bloqueia OAuth.');
-      }
-      try { window.location.assign(OAUTH_URL); }
-      catch { window.location.href = OAUTH_URL; }
-    };
+    /* ---- Alert visível ---- */
+    function showAlert(msg, type='info'){
+      const el = els.uiAlert;
+      const map = {info:'border-sky-500/40 text-sky-200 bg-sky-500/10', err:'border-red-500/40 text-red-200 bg-red-500/10', ok:'border-emerald-500/40 text-emerald-200 bg-emerald-500/10'};
+      el.className = `px-4 py-3 rounded-lg border text-sm ${map[type]||map.info}`;
+      el.textContent = msg;
+      el.classList.remove('hidden');
+    }
+    function hideAlert(){ els.uiAlert.classList.add('hidden'); }
 
-    // ======= Estado global =======
-    let ws = null;
-    let authorized = false;
-    let selectedToken = null;
-    let loginId = null;
-    let currency = 'USD';
-    let tickSubId = null;
-    let candleSubId = null;
-    let openContractId = null;
-    let pocSubId = null;
-    let balanceSubId = null;
+    /* ---- Estado global ---- */
+    let ws=null, authorized=false, selectedToken=null, loginId=null, currency='USD';
+    let tickSubId=null, candleSubId=null, openContractId=null, pocSubId=null, balanceSubId=null;
+    let chart, candleSeries, tickSeries;
+    let authRetryTimer=null;
 
-    // ======= Funções util =======
+    /* ---- Helpers UI ---- */
     function setConnectedUI(on){
       els.connStatus.textContent = on ? 'Conectado (WebSocket ativo)' : 'Desconectado';
     }
     function setAuthUI(on){
       authorized = !!on;
       const dis = !on;
-      [els.accountSelect, els.symbolSelect, els.stakeInput, els.multInput, els.tpInput, els.slInput, els.dcInput, els.upBtn, els.downBtn, els.timeframeSelect].forEach(el=>{
-        el.disabled = dis;
-      });
+      [els.accountSelect, els.symbolSelect, els.stakeInput, els.multInput, els.tpInput, els.slInput, els.dcInput, els.upBtn, els.downBtn, els.timeframeSelect].forEach(el=>{ el.disabled = dis; });
       els.logoutBtn.classList.toggle('hidden', !on);
       els.loginBtn.classList.toggle('hidden', on);
-      els.loginNote.textContent = on
-        ? 'Autorizado. Escolhe a conta e o símbolo para negociar.'
-        : 'Clique em Conectar para iniciar o OAuth.';
-      if(dis){ els.balanceInput.value = ''; els.balanceInput.placeholder = '—'; els.acctType.textContent='—'; }
+      els.loginNote.textContent = on ? 'Autorizado. Escolhe a conta e o símbolo para negociar.' : 'Clique em Conectar para iniciar o OAuth.';
+      if(dis){ els.balanceInput.value=''; els.balanceInput.placeholder='—'; els.acctType.textContent='—'; }
     }
-    function toast(msg,isErr=false){ console[isErr?'error':'log'](msg); }
+    function toast(msg,isErr=false){ (isErr?console.error:console.log)(msg); if(isErr) showAlert(msg,'err'); }
 
-    // ======= Parser de tokens (robusto) =======
+    /* ---- OAuth tokens ---- */
     function parseTokensFromSearchOrHash(qs){
-      const p = new URLSearchParams(qs);
-      const out = [];
-      for (let i=1;i<=10;i++){
-        const tokenI = p.get(`token${i}`) || p.get(`access_token${i}`);
-        const acctI  = p.get(`acct${i}`)  || p.get(`loginid${i}`);
-        const curI   = p.get(`cur${i}`)   || p.get(`currency${i}`);
-        if(tokenI){
-          out.push({ token: tokenI, account: (acctI||'').toUpperCase() || null, currency: (curI||'USD').toUpperCase() });
-        }
+      const p = new URLSearchParams(qs), out=[];
+      for(let i=1;i<=10;i++){
+        const tokenI=p.get(`token${i}`)||p.get(`access_token${i}`), acctI=p.get(`acct${i}`)||p.get(`loginid${i}`), curI=p.get(`cur${i}`)||p.get(`currency${i}`);
+        if(tokenI) out.push({token:tokenI, account:(acctI||'').toUpperCase()||null, currency:(curI||'USD').toUpperCase()});
       }
-      const token = p.get('token') || p.get('access_token');
-      if(token){
-        out.push({ token, account: (p.get('acct') || p.get('loginid') || '').toUpperCase() || null, currency: (p.get('cur') || p.get('currency') || 'USD').toUpperCase() });
-      }
+      const token=p.get('token')||p.get('access_token');
+      if(token) out.push({token, account:(p.get('acct')||p.get('loginid')||'').toUpperCase()||null, currency:(p.get('cur')||p.get('currency')||'USD').toUpperCase()});
       return out;
     }
     function extractTokensFromUrl(){
-      const queryPart = location.search.startsWith('?') ? location.search.slice(1) : '';
-      const hashPart  = location.hash.startsWith('#') ? location.hash.slice(1) : '';
-      const tokens = [ ...parseTokensFromSearchOrHash(queryPart), ...parseTokensFromSearchOrHash(hashPart) ];
+      const q = location.search.startsWith('?')?location.search.slice(1):'';
+      const h = location.hash.startsWith('#')?location.hash.slice(1):'';
+      const tokens=[...parseTokensFromSearchOrHash(q),...parseTokensFromSearchOrHash(h)];
       if(tokens.length){
         localStorage.setItem('POINT_TOKENS', JSON.stringify(tokens));
         history.replaceState({}, document.title, BASE_URL);
-        toast(`Tokens recebidos: ${tokens.length}`);
-      } else {
-        if (queryPart || hashPart) toast('OAuth retornou sem tokens. Verifique scope/response_type/redirect_uri no App.', true);
+        hideAlert();
       }
     }
-    function getStoredTokens(){ try { return JSON.parse(localStorage.getItem('POINT_TOKENS')||'[]'); } catch(e){ return []; } }
+    function getStoredTokens(){ try{return JSON.parse(localStorage.getItem('POINT_TOKENS')||'[]')}catch(e){return[]} }
     function clearTokens(){ localStorage.removeItem('POINT_TOKENS'); localStorage.removeItem('POINT_SELECTED'); }
 
-    // ======= WebSocket =======
+    /* ---- WebSocket ---- */
     function connectWS(){
       if(ws && ws.readyState===1) return;
       ws = new WebSocket(WS_URL);
       ws.onopen = ()=>{
         setConnectedUI(true);
-        const remembered = JSON.parse(localStorage.getItem('POINT_SELECTED')||'null');
+        hideAlert();
         const tokens = getStoredTokens();
-        if(remembered && tokens.length){
-          const match = tokens.find(t=>t.account===remembered.account) || tokens[0];
-          if(match) authorize(match.token, match.account, match.currency);
-        } else if (tokens.length){
-          const first = tokens[0];
-          authorize(first.token, first.account, first.currency);
+        if(tokens.length){
+          const sel = JSON.parse(localStorage.getItem('POINT_SELECTED')||'null') || tokens[0];
+          authorize(sel.token, sel.account, sel.currency);
+          // Se por qualquer motivo a Deriv não responder authorize, tenta novamente após 3s
+          clearTimeout(authRetryTimer);
+          authRetryTimer = setTimeout(()=>{
+            if(!authorized){
+              authorize(sel.token, sel.account, sel.currency);
+              showAlert('Reenviando autorização…', 'info');
+            }
+          }, 3000);
+        } else {
+          showAlert('Sem tokens salvos. Clique em Conectar.', 'info');
         }
       };
       ws.onclose = ()=>{ setConnectedUI(false); setAuthUI(false); };
       ws.onmessage = handleMessage;
-      ws.onerror = ()=>toast('WebSocket error (verifique rede / app_id / origem)', true);
+      ws.onerror = ()=>toast('WebSocket error (rede/app_id/origem).', true);
     }
     function send(msg){ if(!ws || ws.readyState!==1){ toast('WS não conectado', true); return; } ws.send(JSON.stringify(msg)); }
 
-    // ======= Gráfico: carregar de forma segura =======
-    let chart, candleSeries, tickSeries;
-
+    /* ---- Gráfico (carga segura) ---- */
     function initChart(){
-      if (!window.LightweightCharts) return; // segurança
-      const chartContainer = document.getElementById('chart');
-      chart = LightweightCharts.createChart(chartContainer, {
-        layout: { background: { type: 'solid', color: '#0b1220' }, textColor: '#cbd5e1' },
-        grid: { vertLines: { color: '#1e293b' }, horzLines: { color: '#1e293b' } },
-        crosshair: { mode: 0 },
-        rightPriceScale: { borderColor: '#334155' },
-        timeScale: { borderColor: '#334155' },
-        handleScroll: true,
-        handleScale: true,
+      if(!window.LightweightCharts) return;
+      const container=document.getElementById('chart');
+      chart = LightweightCharts.createChart(container, {
+        layout:{background:{type:'solid',color:'#0b1220'},textColor:'#cbd5e1'},
+        grid:{vertLines:{color:'#1e293b'},horzLines:{color:'#1e293b'}},
+        crosshair:{mode:0}, rightPriceScale:{borderColor:'#334155'}, timeScale:{borderColor:'#334155'},
+        handleScroll:true, handleScale:true
       });
       candleSeries = chart.addCandlestickSeries({
-        upColor: '#22c55e', downColor: '#ef4444',
-        borderDownColor: '#ef4444', borderUpColor: '#22c55e',
-        wickDownColor: '#ef4444', wickUpColor: '#22c55e',
+        upColor:'#22c55e', downColor:'#ef4444',
+        borderDownColor:'#ef4444', borderUpColor:'#22c55e',
+        wickDownColor:'#ef4444', wickUpColor:'#22c55e'
       });
-      tickSeries = chart.addLineSeries({ lineWidth: 1.5 });
-
-      resizeChart();
-      window.addEventListener('resize', resizeChart);
+      tickSeries = chart.addLineSeries({lineWidth:1.5});
+      resizeChart(); window.addEventListener('resize', resizeChart);
     }
-
     function ensureChartLoaded(){
-      if (window.LightweightCharts) { initChart(); return; }
-      // fallback CDN
-      const s = document.createElement('script');
-      s.src = 'https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js';
-      s.onload = ()=>{ initChart(); };
-      s.onerror = ()=>{ toast('Falha ao carregar biblioteca de gráfico. O resto do app funciona.', true); };
+      if(window.LightweightCharts){ initChart(); return; }
+      const s=document.createElement('script');
+      s.src='https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js';
+      s.onload=initChart; s.onerror=()=>toast('Falha ao carregar biblioteca do gráfico.', true);
       document.head.appendChild(s);
     }
+    function resizeChart(){ if(!chart) return; const wrap=document.getElementById('chartWrap'); chart.applyOptions({width:wrap.clientWidth,height:wrap.clientHeight}); }
 
-    function resizeChart(){
-      if(!chart) return;
-      const wrap = document.getElementById('chartWrap');
-      chart.applyOptions({ width: wrap.clientWidth, height: wrap.clientHeight });
-    }
-
-    // ======= Mensagens WS =======
+    /* ---- Mensagens WS ---- */
     function handleMessage(evt){
       const data = JSON.parse(evt.data);
-      if(data.error){ toast(`Erro API: ${data.error.code||''} ${data.error.message}`, true); els.posStatus.textContent = `Erro: ${data.error.message}`; return; }
+      if(data.error){ toast(`Erro API: ${data.error.code||''} ${data.error.message}`, true); els.posStatus.textContent=`Erro: ${data.error.message}`; return; }
 
       if(data.msg_type==='authorize'){
+        clearTimeout(authRetryTimer);
         loginId = data.authorize.loginid;
         currency = data.authorize.currency || 'USD';
-        setAuthUI(true);
+        setAuthUI(true); hideAlert();
         updateAcctType(loginId);
-        if (!els.accountSelect.options.length) {
-          const opt = document.createElement('option');
-          opt.value = loginId;
-          opt.textContent = `${loginId} • ${currency}`;
+
+        // popular conta se ainda vazia
+        if(!els.accountSelect.options.length){
+          const opt=document.createElement('option');
+          opt.value=loginId; opt.textContent=`${loginId} • ${currency}`;
           els.accountSelect.appendChild(opt);
-          els.accountSelect.disabled = false;
-          localStorage.setItem('POINT_SELECTED', JSON.stringify({account: loginId, token: selectedToken, currency}));
+          els.accountSelect.disabled=false;
+          const sel = JSON.parse(localStorage.getItem('POINT_SELECTED')||'{}');
+          localStorage.setItem('POINT_SELECTED', JSON.stringify({account: loginId, token: (sel.token||selectedToken), currency}));
         }
+
         loadActiveSymbols();
-        els.posStatus.textContent = 'Nenhuma posição aberta.';
+        els.posStatus.textContent='Nenhuma posição aberta.';
         subscribeBalance();
         setTimeout(()=>ensureDefaultSymbol(), 50);
       }
 
       if(data.msg_type==='active_symbols'){
-        const syms = (data.active_symbols||[])
-          .filter(s=>s.market==='synthetic_index' || s.symbol.includes('R_') || s.symbol.includes('VOL') || s.symbol.startsWith('1HZ'))
+        const syms=(data.active_symbols||[])
+          .filter(s=>s.market==='synthetic_index'||s.symbol.includes('R_')||s.symbol.includes('VOL')||s.symbol.startsWith('1HZ'))
           .map(s=>({symbol:s.symbol, display:`${s.display_name} (${s.symbol})`}));
-        els.symbolSelect.innerHTML = '';
-        syms.forEach(s=>{
-          const o=document.createElement('option');
-          o.value = s.symbol; o.textContent = s.display;
-          els.symbolSelect.appendChild(o);
-        });
-        const hasDefault = syms.find(s=>s.symbol===DEFAULT_SYMBOL);
-        els.symbolSelect.value = hasDefault ? DEFAULT_SYMBOL : (syms[0]?.symbol||'');
-        if(els.symbolSelect.value){
-          subscribeCandles(els.symbolSelect.value);
-          subscribeTicks(els.symbolSelect.value);
-        }
+        els.symbolSelect.innerHTML='';
+        syms.forEach(s=>{ const o=document.createElement('option'); o.value=s.symbol; o.textContent=s.display; els.symbolSelect.appendChild(o); });
+        const hasDefault=syms.find(s=>s.symbol===DEFAULT_SYMBOL);
+        els.symbolSelect.value = hasDefault?DEFAULT_SYMBOL:(syms[0]?.symbol||'');
+        if(els.symbolSelect.value){ subscribeCandles(els.symbolSelect.value); subscribeTicks(els.symbolSelect.value); }
       }
 
       if(data.msg_type==='tick' && tickSeries){
-        const q = Number(data.tick.quote);
-        tickSeries.update({ time: Number(data.tick.epoch), value: q });
+        tickSeries.update({ time:Number(data.tick.epoch), value:Number(data.tick.quote) });
       }
 
       if(data.msg_type==='candles' && candleSeries){
-        const arr = Array.isArray(data.candles) ? data.candles : [data.candles];
-        const mapped = arr.map(c=>({
-          time: Number(c.epoch),
-          open: Number(c.open),
-          high: Number(c.high),
-          low: Number(c.low),
-          close: Number(c.close),
-        }));
-        if(Array.isArray(data.candles)){
-          candleSeries.setData(mapped);
-          chart && chart.timeScale().fitContent();
-        } else {
-          candleSeries.update(mapped[0]);
-        }
+        const arr=Array.isArray(data.candles)?data.candles:[data.candles];
+        const mapped=arr.map(c=>({time:Number(c.epoch),open:+c.open,high:+c.high,low:+c.low,close:+c.close}));
+        if(Array.isArray(data.candles)){ candleSeries.setData(mapped); chart && chart.timeScale().fitContent(); } else { candleSeries.update(mapped[0]); }
       }
 
       if(data.msg_type==='proposal'){
-        if(data.proposal && data.proposal.id){
-          const id = data.proposal.id;
-          const ask = Number(data.proposal.ask_price);
-          send({ buy: id, price: ask });
-        }
+        if(data.proposal && data.proposal.id){ const id=data.proposal.id; const ask=Number(data.proposal.ask_price); send({buy:id, price:ask}); }
       }
 
       if(data.msg_type==='buy'){
         if(data.buy && data.buy.contract_id){
-          openContractId = data.buy.contract_id;
-          els.posStatus.textContent = `Contrato #${openContractId} aberto. A acompanhar...`;
+          openContractId=data.buy.contract_id;
+          els.posStatus.textContent=`Contrato #${openContractId} aberto. A acompanhar...`;
           els.closeBtn.classList.remove('hidden');
           subscribeOpenContract(openContractId);
         }
       }
 
       if(data.msg_type==='proposal_open_contract'){
-        const poc = data.proposal_open_contract;
-        if(!poc) return;
-        if(poc.contract_id) openContractId = poc.contract_id;
-        const pl = (poc.profit || 0);
-        els.plVal.textContent = `${pl.toFixed(2)} ${currency}`;
-        if(poc.is_sold){
-          els.posStatus.textContent = `Contrato fechado. Resultado: ${pl.toFixed(2)} ${currency}`;
-          cleanupPosition();
-        }
+        const poc=data.proposal_open_contract; if(!poc) return;
+        if(poc.contract_id) openContractId=poc.contract_id;
+        const pl=(poc.profit||0); els.plVal.textContent=`${pl.toFixed(2)} ${currency}`;
+        if(poc.is_sold){ els.posStatus.textContent=`Contrato fechado. Resultado: ${pl.toFixed(2)} ${currency}`; cleanupPosition(); }
       }
 
       if(data.msg_type==='sell'){ toast('Solicitado fechar posição.'); }
 
       if(data.msg_type==='balance'){
-        if(data.balance && typeof data.balance.balance !== 'undefined'){
-          const bal = Number(data.balance.balance);
-          els.balanceInput.value = `${bal.toFixed(2)} ${data.balance.currency || currency}`;
+        if(data.balance && typeof data.balance.balance!=='undefined'){
+          els.balanceInput.value = `${Number(data.balance.balance).toFixed(2)} ${data.balance.currency || currency}`;
         }
-        if(data.subscription && data.subscription.id && !balanceSubId){
-          balanceSubId = data.subscription.id;
-        }
+        if(data.subscription && data.subscription.id && !balanceSubId){ balanceSubId=data.subscription.id; }
       }
     }
 
-    function updateAcctType(loginid){
-      if(!loginid){ els.acctType.textContent='—'; return; }
-      const isDemo = /^VRTC/i.test(loginid);
-      els.acctType.textContent = isDemo ? 'Conta Demo' : 'Conta Real';
-    }
+    function updateAcctType(loginid){ if(!loginid){ els.acctType.textContent='—'; return; } els.acctType.textContent = /^VRTC/i.test(loginid) ? 'Conta Demo' : 'Conta Real'; }
 
-    // ======= Fluxos API =======
-    function authorize(token, acct, cur){
-      selectedToken = token;
-      currency = (cur||'USD').toUpperCase();
-      send({ authorize: token, passthrough:{acct} });
-    }
-    function loadActiveSymbols(){ send({ active_symbols: 'brief', product_type: 'basic' }); }
-    function ensureDefaultSymbol(){
-      if(!els.symbolSelect.value){ els.symbolSelect.value = DEFAULT_SYMBOL; }
-      if(els.symbolSelect.value){ subscribeCandles(els.symbolSelect.value); subscribeTicks(els.symbolSelect.value); }
-    }
-
+    /* ---- Fluxos API ---- */
+    function authorize(token, acct, cur){ selectedToken=token; currency=(cur||'USD').toUpperCase(); send({authorize:token, passthrough:{acct}}); }
+    function loadActiveSymbols(){ send({active_symbols:'brief', product_type:'basic'}); }
+    function ensureDefaultSymbol(){ if(!els.symbolSelect.value){ els.symbolSelect.value=DEFAULT_SYMBOL; } if(els.symbolSelect.value){ subscribeCandles(els.symbolSelect.value); subscribeTicks(els.symbolSelect.value); } }
     function subscribeTicks(symbol){
-      if(tickSubId){ send({ forget: tickSubId }); tickSubId=null; }
+      if(tickSubId){ send({forget:tickSubId}); tickSubId=null; }
       if(tickSeries) tickSeries.setData([]);
-      send({ ticks: symbol, subscribe: 1 });
-      ws.addEventListener('message', function once(e){
-        try{
-          const d = JSON.parse(e.data);
-          if(d.msg_type==='tick' && d.tick && d.subscription && d.subscription.id){
-            tickSubId = d.subscription.id;
-            ws.removeEventListener('message', once);
-          }
-        }catch(_){}
-      });
+      send({ticks:symbol, subscribe:1});
+      ws.addEventListener('message', function once(e){ try{const d=JSON.parse(e.data); if(d.msg_type==='tick'&&d.subscription?.id){tickSubId=d.subscription.id; ws.removeEventListener('message', once);} }catch{} });
     }
-
     function subscribeCandles(symbol){
-      if(candleSubId){ send({ forget: candleSubId }); candleSubId=null; }
-      send({ ticks_history: symbol, style: 'candles', granularity: CANDLE_GRANULARITY, count: 300, subscribe: 1 });
-      ws.addEventListener('message', function once(e){
-        try{
-          const d = JSON.parse(e.data);
-          if(d.msg_type==='candles' && d.subscription && d.subscription.id){
-            candleSubId = d.subscription.id;
-            ws.removeEventListener('message', once);
-          }
-        }catch(_){}
-      });
+      if(candleSubId){ send({forget:candleSubId}); candleSubId=null; }
+      send({ticks_history:symbol, style:'candles', granularity:CANDLE_GRANULARITY, count:300, subscribe:1});
+      ws.addEventListener('message', function once(e){ try{const d=JSON.parse(e.data); if(d.msg_type==='candles'&&d.subscription?.id){candleSubId=d.subscription.id; ws.removeEventListener('message', once);} }catch{} });
       els.chartInfo.textContent = tfLabel(CANDLE_GRANULARITY) + ' candles • stream';
     }
-
-    function tfLabel(g){
-      const map = {60:'1m',120:'2m',180:'3m',300:'5m',600:'10m',900:'15m',1800:'30m',3600:'1h',7200:'2h',14400:'4h',28800:'8h',86400:'1d'};
-      return map[g] || (g+'s');
-    }
-
+    function tfLabel(g){ const m={60:'1m',120:'2m',180:'3m',300:'5m',600:'10m',900:'15m',1800:'30m',3600:'1h',7200:'2h',14400:'4h',28800:'8h',86400:'1d'}; return m[g]||(`${g}s`); }
     function subscribeOpenContract(contract_id){
-      if(pocSubId){ send({ forget: pocSubId }); pocSubId=null; }
-      send({ proposal_open_contract: 1, contract_id, subscribe: 1 });
-      ws.addEventListener('message', function once(e){
-        try{
-          const d = JSON.parse(e.data);
-          if(d.msg_type==='proposal_open_contract' && d.subscription && d.subscription.id){
-            pocSubId = d.subscription.id;
-            ws.removeEventListener('message', once);
-          }
-        }catch(_){}
-      });
+      if(pocSubId){ send({forget:pocSubId}); pocSubId=null; }
+      send({proposal_open_contract:1, contract_id, subscribe:1});
+      ws.addEventListener('message', function once(e){ try{const d=JSON.parse(e.data); if(d.msg_type==='proposal_open_contract'&&d.subscription?.id){pocSubId=d.subscription.id; ws.removeEventListener('message', once);} }catch{} });
     }
-
-    function subscribeBalance(){
-      if(balanceSubId){ send({ forget: balanceSubId }); balanceSubId = null; }
-      send({ balance: 1, subscribe: 1 });
-    }
-    function requestBalanceOnce(){ send({ balance: 1 }); }
-
-    function cleanupPosition(){
-      openContractId = null;
-      if(pocSubId){ send({ forget: pocSubId }); pocSubId=null; }
-      els.closeBtn.classList.add('hidden');
-      els.plVal.textContent = '—';
-    }
+    function subscribeBalance(){ if(balanceSubId){ send({forget:balanceSubId}); balanceSubId=null; } send({balance:1, subscribe:1}); }
+    function requestBalanceOnce(){ send({balance:1}); }
+    function cleanupPosition(){ openContractId=null; if(pocSubId){ send({forget:pocSubId}); pocSubId=null; } els.closeBtn.classList.add('hidden'); els.plVal.textContent='—'; }
 
     function placeMultiplier(direction){
       if(!authorized) return toast('Autorize primeiro', true);
-      const symbol = els.symbolSelect.value || DEFAULT_SYMBOL;
-      const amount = Number(els.stakeInput.value||0);
-      const multiplier = Number(els.multInput.value||10);
-      if(!symbol || !amount){ els.posStatus.textContent='Preencha símbolo e stake'; return; }
-      const limit_order = {};
-      const tp = Number(els.tpInput.value||0);
-      const sl = Number(els.slInput.value||0);
-      if(tp>0) limit_order.take_profit = tp;
-      if(sl>0) limit_order.stop_loss = sl;
-      const req = {
-        proposal: 1, amount, basis: 'stake', product_type: 'multiplier',
-        contract_type: direction==='up' ? 'MULTUP' : 'MULTDOWN',
-        currency, symbol, multiplier
-      };
-      if(Object.keys(limit_order).length) req.limit_order = limit_order;
-      const dc = els.dcInput.value; if(dc) req.cancellation = dc;
-      els.posStatus.textContent = 'Enviando proposal...'; send(req);
+      const symbol=els.symbolSelect.value||DEFAULT_SYMBOL;
+      const amount=Number(els.stakeInput.value||0);
+      const multiplier=Number(els.multInput.value||10);
+      if(!symbol||!amount){ els.posStatus.textContent='Preencha símbolo e stake'; return; }
+      const limit_order={}, tp=Number(els.tpInput.value||0), sl=Number(els.slInput.value||0);
+      if(tp>0) limit_order.take_profit=tp; if(sl>0) limit_order.stop_loss=sl;
+      const req={ proposal:1, amount, basis:'stake', product_type:'multiplier', contract_type: direction==='up'?'MULTUP':'MULTDOWN', currency, symbol, multiplier };
+      if(Object.keys(limit_order).length) req.limit_order=limit_order; const dc=els.dcInput.value; if(dc) req.cancellation=dc;
+      els.posStatus.textContent='Enviando proposal...'; send(req);
     }
 
-    // ======= Eventos UI restantes =======
+    /* ---- Eventos UI ---- */
+    els.loginBtn.onclick = ()=>{ if(!CAN_USE_REDIRECT) alert('Abra em https (ex.: GitHub Pages).'); try{window.location.assign(OAUTH_URL);}catch{window.location.href=OAUTH_URL;} };
     els.logoutBtn.onclick = ()=>{
-      cleanupPosition();
-      if(ws && ws.readyState===1) ws.close();
-      if(balanceSubId){ send({ forget: balanceSubId }); balanceSubId=null; }
-      if(tickSubId){ send({ forget: tickSubId }); tickSubId=null; }
-      if(candleSubId){ send({ forget: candleSubId }); candleSubId=null; }
-      clearTokens();
-      selectedToken=null; loginId=null; setAuthUI(false);
-      els.accountSelect.innerHTML = '';
-      if(candleSeries) candleSeries.setData([]);
-      if(tickSeries) tickSeries.setData([]);
-      toast('Sessão limpa.');
+      cleanupPosition(); if(ws && ws.readyState===1) ws.close();
+      if(balanceSubId){ send({forget:balanceSubId}); balanceSubId=null; }
+      if(tickSubId){ send({forget:tickSubId}); tickSubId=null; }
+      if(candleSubId){ send({forget:candleSubId}); candleSubId=null; }
+      clearTokens(); selectedToken=null; loginId=null; setAuthUI(false); els.accountSelect.innerHTML=''; candleSeries&&candleSeries.setData([]); tickSeries&&tickSeries.setData([]); showAlert('Sessão limpa.','ok');
     };
-
     els.accountSelect.onchange = ()=>{
-      const opt = els.accountSelect.value;
-      if(!opt) return;
-      const tokens = getStoredTokens();
-      const chosen = tokens.find(t=>t.account===opt) || tokens[0];
-      if(!chosen) return;
-      localStorage.setItem('POINT_SELECTED', JSON.stringify(chosen));
-      updateAcctType(opt);
-      if(ws && ws.readyState===1) authorize(chosen.token, chosen.account, chosen.currency);
-      else connectWS();
+      const opt=els.accountSelect.value; if(!opt) return;
+      const tokens=getStoredTokens(); const chosen=tokens.find(t=>t.account===opt)||tokens[0]; if(!chosen) return;
+      localStorage.setItem('POINT_SELECTED', JSON.stringify(chosen)); updateAcctType(opt);
+      if(ws && ws.readyState===1) authorize(chosen.token, chosen.account, chosen.currency); else connectWS();
       setTimeout(()=>{ subscribeBalance(); requestBalanceOnce(); }, 200);
     };
-
-    els.symbolSelect.onchange = (e)=>{ const sym = e.target.value; if(!sym) return; subscribeCandles(sym); subscribeTicks(sym); };
-    els.timeframeSelect.onchange = (e)=>{ CANDLE_GRANULARITY = Number(e.target.value || 60); const sym = els.symbolSelect.value || DEFAULT_SYMBOL; if(sym){ subscribeCandles(sym); } };
-
-    document.getElementById('zoomInBtn').onclick = ()=>{ if(!chart) return; const s = chart.timeScale().getBarSpacing(); chart.timeScale().setBarSpacing(s * 0.8); };
-    document.getElementById('zoomOutBtn').onclick = ()=>{ if(!chart) return; const s = chart.timeScale().getBarSpacing(); chart.timeScale().setBarSpacing(s * 1.25); };
+    els.symbolSelect.onchange = e=>{ const sym=e.target.value; if(!sym) return; subscribeCandles(sym); subscribeTicks(sym); };
+    els.timeframeSelect.onchange = e=>{ CANDLE_GRANULARITY=Number(e.target.value||60); const sym=els.symbolSelect.value||DEFAULT_SYMBOL; if(sym) subscribeCandles(sym); };
+    document.getElementById('zoomInBtn').onclick = ()=>{ if(!chart) return; const s=chart.timeScale().getBarSpacing(); chart.timeScale().setBarSpacing(s*0.8); };
+    document.getElementById('zoomOutBtn').onclick = ()=>{ if(!chart) return; const s=chart.timeScale().getBarSpacing(); chart.timeScale().setBarSpacing(s*1.25); };
     document.getElementById('zoomFitBtn').onclick = ()=>{ if(!chart) return; chart.timeScale().fitContent(); };
 
-    // ======= Inicialização =======
-    function init(){
-      ensureChartLoaded();          // carrega o gráfico de forma segura (não bloqueia OAuth)
-      extractTokensFromUrl();       // lê tokens do retorno do OAuth
-      const tokens = getStoredTokens();
-      connectWS();                  // conecta WS desde já
-      if(tokens.length){
-        els.accountSelect.innerHTML = '';
-        tokens.forEach(t=>{
-          if (t.account) {
-            const o=document.createElement('option');
-            o.value=t.account; o.textContent=`${t.account} • ${t.currency}`;
-            els.accountSelect.appendChild(o);
-          }
-        });
-        if (els.accountSelect.options.length) els.accountSelect.disabled = false;
-        const first = tokens[0];
-        localStorage.setItem('POINT_SELECTED', JSON.stringify(first));
-        if (first.account) updateAcctType(first.account);
-        authorize(first.token, first.account, first.currency);
-      } else {
-        toast('Sem tokens salvos. Clique em Conectar.', false);
-      }
-    }
-    init();
+    /* ---- Inicialização ---- */
+    (function init(){
+      ensureChartLoaded();
+      extractTokensFromUrl();
+      const tokens=getStoredTokens();
+      // Popular seletor se já veio account pelo OAuth
+      els.accountSelect.innerHTML='';
+      tokens.forEach(t=>{ if(t.account){ const o=document.createElement('option'); o.value=t.account; o.textContent=`${t.account} • ${t.currency}`; els.accountSelect.appendChild(o); } });
+      if(els.accountSelect.options.length) els.accountSelect.disabled=false;
+      // Lembrar seleção e conectar
+      if(tokens.length){ const first=tokens[0]; localStorage.setItem('POINT_SELECTED', JSON.stringify(first)); if(first.account) updateAcctType(first.account); }
+      connectWS();
+    })();
   </script>
 </body>
 </html>
