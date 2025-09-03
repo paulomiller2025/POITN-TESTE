@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>POINT — Multipliers (Deriv)</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Gráfico leve estilo Deriv -->
+  <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
   <style>
     :root{
       --bg:#0b1220;--card:#121a2b;--muted:#9fb0d0;--ok:#22c55e;--warn:#eab308;--err:#ef4444;--ink:#e6edf7;--soft:#1b2740
@@ -18,9 +20,23 @@
     .grid-col{display:grid;grid-template-columns:1fr 1fr;gap:.75rem}
     @media (min-width:1024px){.grid-col-3{grid-template-columns:repeat(3,1fr)}}
 
-    /* === Ajuste solicitado: selects com texto preto ao clicar === */
+    /* Selects com texto preto ao focar/abrir */
     select:focus, select:active { color:#000 !important; }
     select option { color:#000; }
+
+    /* Layout principal: 3 colunas (esq — centro — dir) */
+    .layout-3 {
+      display: grid;
+      grid-template-columns: 300px 1fr 340px;
+      gap: 1rem;
+    }
+    @media (max-width: 1024px){
+      .layout-3 { grid-template-columns: 1fr; }
+    }
+
+    /* Altura do gráfico */
+    #chartWrap{ height: 460px; }
+    #chart{ width:100%; height:100%; }
   </style>
 </head>
 <body>
@@ -42,7 +58,7 @@
     </div>
   </header>
 
-  <main class="max-w-6xl mx-auto px-4 py-6 space-y-6">
+  <main class="max-w-6xl mx-auto px-4 py-6 space-y-4">
     <!-- STATUS / CONTAS -->
     <section class="card rounded-2xl p-4">
       <div class="flex flex-wrap items-center gap-3 justify-between">
@@ -62,104 +78,124 @@
           <div class="flex items-center gap-3">
             <label class="text-sm text-slate-300">Conta:</label>
             <select id="accountSelect" class="pill px-3 py-2 rounded-xl text-sm text-slate-200 bg-transparent" disabled></select>
-            <button id="useAccountBtn" class="btn px-3 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-sm disabled:opacity-50" disabled>Usar conta</button>
           </div>
-          <!-- === Formulário de Saldo (por conta selecionada) === -->
           <div class="flex items-center gap-3">
             <label class="text-sm text-slate-300">Saldo:</label>
-            <input id="balanceInput" class="pill px-3 py-2 rounded-xl text-sm bg-transparent text-slate-200 w-40 text-right" placeholder="—" disabled />
-            <button id="refreshBalanceBtn" class="btn px-3 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-sm disabled:opacity-50" disabled>Atualizar</button>
+            <input id="balanceInput" class="pill px-3 py-2 rounded-xl text-sm bg-transparent text-slate-200 w-44 text-right" placeholder="—" disabled />
           </div>
         </div>
       </div>
     </section>
 
-    <!-- CONTROLES DE MERCADO -->
-    <section class="card rounded-2xl p-4">
-      <div class="grid gap-4 lg:grid-cols-3">
-        <div class="space-y-3">
-          <div class="text-xs uppercase tracking-wide text-slate-400">Mercado</div>
-          <div class="space-y-2">
-            <label class="text-sm text-slate-300">Símbolo (Volatility/Synthetic)</label>
-            <select id="symbolSelect" class="pill w-full px-3 py-2 rounded-xl text-sm bg-transparent text-slate-200" disabled>
-              <option>— carregando —</option>
-            </select>
-          </div>
-          <div class="grid-col">
+    <!-- LAYOUT: ESQ | CENTRO | DIR -->
+    <section class="layout-3">
+      <!-- ESQUERDA: MERCADO + POSIÇÃO -->
+      <div class="space-y-4">
+        <!-- MERCADO -->
+        <div class="card rounded-2xl p-4">
+          <div class="text-xs uppercase tracking-wide text-slate-400 mb-2">Mercado</div>
+          <div class="space-y-3">
             <div>
-              <label class="text-sm text-slate-300">Stake</label>
-              <input id="stakeInput" type="number" min="1" step="1" value="5" class="pill w-full px-3 py-2 rounded-xl bg-transparent text-slate-200" disabled />
-            </div>
-            <div>
-              <label class="text-sm text-slate-300">Multiplier</label>
-              <select id="multInput" class="pill w-full px-3 py-2 rounded-xl bg-transparent text-slate-200" disabled>
-                <option value="10" selected>x10</option>
-                <option value="50">x50</option>
-                <option value="100">x100</option>
-                <option value="200">x200</option>
-                <option value="400">x400</option>
-                <option value="800">x800</option>
-                <option value="1000">x1000</option>
-                <option value="1500">x1500</option>
-                <option value="2000">x2000</option>
+              <label class="text-sm text-slate-300">Símbolo (Volatility/Synthetic)</label>
+              <select id="symbolSelect" class="pill w-full px-3 py-2 rounded-xl text-sm bg-transparent text-slate-200" disabled>
+                <option>— carregando —</option>
               </select>
             </div>
-          </div>
-          <div class="grid-col">
-            <div>
-              <label class="text-sm text-slate-300">Take Profit (opcional)</label>
-              <input id="tpInput" type="number" min="1" step="1" placeholder="ex: 150" class="pill w-full px-3 py-2 rounded-xl bg-transparent text-slate-200" disabled />
+
+            <div class="glass rounded-xl p-3">
+              <div class="flex items-baseline justify-between">
+                <div>
+                  <div id="tickSymbol" class="text-xs text-slate-400">—</div>
+                  <div class="text-2xl font-semibold mt-1" id="tickPrice">—</div>
+                </div>
+                <div class="text-xs text-slate-500" id="tickNote">Assina ticks ao escolher o símbolo.</div>
+              </div>
             </div>
-            <div>
-              <label class="text-sm text-slate-300">Stop Loss (opcional)</label>
-              <input id="slInput" type="number" min="1" step="1" placeholder="ex: 130" class="pill w-full px-3 py-2 rounded-xl bg-transparent text-slate-200" disabled />
-            </div>
-          </div>
-          <div>
-            <label class="text-sm text-slate-300">Deal Cancellation</label>
-            <select id="dcInput" class="pill w-full px-3 py-2 rounded-xl bg-transparent text-slate-200" disabled>
-              <option value="">Desligado</option>
-              <option value="5m">5m</option>
-              <option value="10m">10m</option>
-              <option value="15m">15m</option>
-              <option value="30m">30m</option>
-              <option value="60m">60m</option>
-            </select>
           </div>
         </div>
 
-        <div class="space-y-3">
-          <div class="text-xs uppercase tracking-wide text-slate-400">Ação</div>
+        <!-- POSIÇÃO -->
+        <div class="card rounded-2xl p-4">
+          <div class="text-xs uppercase tracking-wide text-slate-400">Posição</div>
+          <div id="posStatus" class="text-sm mt-1">Nenhuma posição aberta.</div>
+          <div class="flex items-center justify-between mt-3">
+            <div class="text-sm">P/L: <span id="plVal" class="font-semibold text-slate-200">—</span></div>
+            <button id="closeBtn" class="btn px-3 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-sm hidden">Fechar posição</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- CENTRO: GRÁFICO -->
+      <div class="card rounded-2xl p-4">
+        <div class="flex items-center justify-between mb-2">
+          <div class="text-xs uppercase tracking-wide text-slate-400">Gráfico de Velas</div>
+          <div class="text-xs text-slate-400" id="chartInfo">1m candles • stream</div>
+        </div>
+        <div id="chartWrap" class="rounded-xl overflow-hidden">
+          <div id="chart"></div>
+        </div>
+      </div>
+
+      <!-- DIREITA: PARÂMETROS + AÇÃO -->
+      <div class="space-y-4">
+        <div class="card rounded-2xl p-4">
+          <div class="text-xs uppercase tracking-wide text-slate-400 mb-2">Parâmetros</div>
+          <div class="space-y-3">
+            <div class="grid-col">
+              <div>
+                <label class="text-sm text-slate-300">Stake</label>
+                <input id="stakeInput" type="number" min="1" step="1" value="5" class="pill w-full px-3 py-2 rounded-xl bg-transparent text-slate-200" disabled />
+              </div>
+              <div>
+                <label class="text-sm text-slate-300">Multiplier</label>
+                <select id="multInput" class="pill w-full px-3 py-2 rounded-xl bg-transparent text-slate-200" disabled>
+                  <option value="10" selected>x10</option>
+                  <option value="50">x50</option>
+                  <option value="100">x100</option>
+                  <option value="200">x200</option>
+                  <option value="400">x400</option>
+                  <option value="800">x800</option>
+                  <option value="1000">x1000</option>
+                  <option value="1500">x1500</option>
+                  <option value="2000">x2000</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="grid-col">
+              <div>
+                <label class="text-sm text-slate-300">Take Profit (opcional)</label>
+                <input id="tpInput" type="number" min="1" step="1" placeholder="ex: 150" class="pill w-full px-3 py-2 rounded-xl bg-transparent text-slate-200" disabled />
+              </div>
+              <div>
+                <label class="text-sm text-slate-300">Stop Loss (opcional)</label>
+                <input id="slInput" type="number" min="1" step="1" placeholder="ex: 130" class="pill w-full px-3 py-2 rounded-xl bg-transparent text-slate-200" disabled />
+              </div>
+            </div>
+
+            <div>
+              <label class="text-sm text-slate-300">Deal Cancellation</label>
+              <select id="dcInput" class="pill w-full px-3 py-2 rounded-xl bg-transparent text-slate-200" disabled>
+                <option value="">Desligado</option>
+                <option value="5m">5m</option>
+                <option value="10m">10m</option>
+                <option value="15m">15m</option>
+                <option value="30m">30m</option>
+                <option value="60m">60m</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="card rounded-2xl p-4">
+          <div class="text-xs uppercase tracking-wide text-slate-400 mb-2">Ação</div>
           <div class="flex gap-3">
             <button id="upBtn" class="btn flex-1 px-4 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-40" disabled>UP (MULTUP)</button>
             <button id="downBtn" class="btn flex-1 px-4 py-3 rounded-xl bg-rose-600 hover:bg-rose-500 text-white disabled:opacity-40" disabled>DOWN (MULTDOWN)</button>
           </div>
-          <div class="text-xs text-slate-400">
-            Multipliers: perdas limitadas ao <b>stake</b>; podes fechar a qualquer momento; TP/SL e Cancellation suportados. 3
+          <div class="text-xs text-slate-400 mt-2">
+            Multipliers: perdas limitadas ao <b>stake</b>; podes fechar a qualquer momento; TP/SL e Cancellation suportados.
           </div>
-        </div>
-
-        <div class="space-y-3">
-          <div class="text-xs uppercase tracking-wide text-slate-400">Preço (tempo real)</div>
-          <div class="glass rounded-xl p-4">
-            <div id="tickSymbol" class="text-sm text-slate-400">—</div>
-            <div class="text-3xl font-semibold mt-1" id="tickPrice">—</div>
-            <div class="mt-3 text-xs text-slate-400" id="tickNote">Assina ticks ao escolher o símbolo.</div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- POSIÇÃO ATIVA -->
-    <section class="card rounded-2xl p-4">
-      <div class="flex items-center justify-between">
-        <div>
-          <div class="text-xs uppercase tracking-wide text-slate-400">Posição</div>
-          <div id="posStatus" class="text-sm">Nenhuma posição aberta.</div>
-        </div>
-        <div class="flex items-center gap-3">
-          <div class="text-sm">P/L: <span id="plVal" class="font-semibold text-slate-200">—</span></div>
-          <button id="closeBtn" class="btn px-3 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-sm hidden">Fechar posição</button>
         </div>
       </div>
     </section>
@@ -169,7 +205,9 @@
     // ================== CONFIG ==================
     const APP_ID = 98640; // POINT
     const WS_URL = `wss://ws.derivws.com/websockets/v3?app_id=${APP_ID}`;
-    const OAUTH_URL = `https://oauth.deriv.com/oauth2/authorize?app_id=${APP_ID}`; // redireciona e retorna com tokens
+    const OAUTH_URL = `https://oauth.deriv.com/oauth2/authorize?app_id=${APP_ID}`;
+    const DEFAULT_SYMBOL = '1HZ100V'; // Volatility 100 (1s)
+    const CANDLE_GRANULARITY = 60; // 1m
     // ============================================
 
     // Estado global simples
@@ -179,6 +217,7 @@
     let loginId = null;
     let currency = 'USD';
     let tickSubId = null;
+    let candleSubId = null;
     let openContractId = null;
     let pocSubId = null;
     let balanceSubId = null;
@@ -189,7 +228,6 @@
       connStatus: document.getElementById('connStatus'),
       loginNote: document.getElementById('loginNote'),
       accountSelect: document.getElementById('accountSelect'),
-      useAccountBtn: document.getElementById('useAccountBtn'),
       symbolSelect: document.getElementById('symbolSelect'),
       stakeInput: document.getElementById('stakeInput'),
       multInput: document.getElementById('multInput'),
@@ -205,8 +243,28 @@
       plVal: document.getElementById('plVal'),
       closeBtn: document.getElementById('closeBtn'),
       balanceInput: document.getElementById('balanceInput'),
-      refreshBalanceBtn: document.getElementById('refreshBalanceBtn'),
+      chartInfo: document.getElementById('chartInfo'),
     };
+
+    // === Chart (Lightweight Charts) ===
+    const chartContainer = document.getElementById('chart');
+    const chart = LightweightCharts.createChart(chartContainer, {
+      layout: { background: { type: 'solid', color: '#0b1220' }, textColor: '#cbd5e1' },
+      grid: { vertLines: { color: '#1e293b' }, horzLines: { color: '#1e293b' } },
+      crosshair: { mode: 0 },
+      rightPriceScale: { borderColor: '#334155' },
+      timeScale: { borderColor: '#334155' },
+    });
+    const candleSeries = chart.addCandlestickSeries({
+      upColor: '#22c55e', downColor: '#ef4444', borderDownColor: '#ef4444', borderUpColor: '#22c55e', wickDownColor: '#ef4444', wickUpColor: '#22c55e',
+    });
+
+    function resizeChart(){
+      const wrap = document.getElementById('chartWrap');
+      chart.applyOptions({ width: wrap.clientWidth, height: wrap.clientHeight });
+    }
+    window.addEventListener('resize', resizeChart);
+    setTimeout(resizeChart, 10);
 
     // ------------- Helpers UI -------------
     function setConnectedUI(on){
@@ -215,7 +273,7 @@
     function setAuthUI(on){
       authorized = !!on;
       const dis = !on;
-      [els.accountSelect, els.useAccountBtn, els.symbolSelect, els.stakeInput, els.multInput, els.tpInput, els.slInput, els.dcInput, els.upBtn, els.downBtn, els.refreshBalanceBtn].forEach(el=>{
+      [els.accountSelect, els.symbolSelect, els.stakeInput, els.multInput, els.tpInput, els.slInput, els.dcInput, els.upBtn, els.downBtn].forEach(el=>{
         el.disabled = dis;
       });
       els.logoutBtn.classList.toggle('hidden', !on);
@@ -230,7 +288,7 @@
     }
 
     // ------------- OAuth: captura tokens do redirect -------------
-    // Exemplo de retorno: .../redirect/?acct1=crxxxx&token1=aaaa&cur1=usd&acct2=vrtc...&token2=bbbb&cur2=usd
+    // Esperado: ?acct1=CRxxxx&token1=...&cur1=USD&acct2=VRTC...&token2=...
     function extractTokensFromUrl(){
       const q = new URLSearchParams(location.search);
       const tokens = [];
@@ -242,7 +300,6 @@
       }
       if(tokens.length){
         localStorage.setItem('POINT_TOKENS', JSON.stringify(tokens));
-        // remove params da barra
         history.replaceState({}, document.title, location.pathname);
       }
     }
@@ -260,7 +317,6 @@
       ws = new WebSocket(WS_URL);
       ws.onopen = ()=>{
         setConnectedUI(true);
-        // se já tínhamos uma conta escolhida, reautoriza
         const remembered = JSON.parse(localStorage.getItem('POINT_SELECTED')||'null');
         const tokens = getStoredTokens();
         if(remembered && tokens.length){
@@ -281,11 +337,13 @@
       ws.send(JSON.stringify(msg));
     }
 
+    // ------------- Mensagens WS -------------
     function handleMessage(evt){
       const data = JSON.parse(evt.data);
 
       if(data.error){
         toast(data.error.message, true);
+        els.posStatus.textContent = `Erro: ${data.error.message}`;
         return;
       }
 
@@ -297,12 +355,14 @@
         loadActiveSymbols();
         els.posStatus.textContent = 'Nenhuma posição aberta.';
         subscribeBalance(); // saldo ao autorizar
+        // Se ainda não definimos símbolo, usar o padrão
+        setTimeout(()=>ensureDefaultSymbol(), 50);
       }
 
       // active_symbols -> popula select
       if(data.msg_type==='active_symbols'){
         const syms = (data.active_symbols||[])
-          .filter(s=>s.market==='synthetic_index' || s.symbol.includes('R_') || s.symbol.includes('VOL') || s.market==='cryptocurrency')
+          .filter(s=>s.market==='synthetic_index' || s.symbol.includes('R_') || s.symbol.includes('VOL') || s.symbol.startsWith('1HZ'))
           .map(s=>({symbol:s.symbol, display:`${s.display_name} (${s.symbol})`}));
         els.symbolSelect.innerHTML = '';
         syms.forEach(s=>{
@@ -310,16 +370,41 @@
           o.value = s.symbol; o.textContent = s.display;
           els.symbolSelect.appendChild(o);
         });
-        // auto-subscribe first
-        if(syms[0]) subscribeTicks(syms[0].symbol);
+        // Seleciona DEFAULT_SYMBOL se existir; senão, primeiro disponível
+        const hasDefault = syms.find(s=>s.symbol===DEFAULT_SYMBOL);
+        els.symbolSelect.value = hasDefault ? DEFAULT_SYMBOL : (syms[0]?.symbol||'');
+        if(els.symbolSelect.value){
+          subscribeTicks(els.symbolSelect.value);
+          subscribeCandles(els.symbolSelect.value);
+        }
       }
 
       // ticks (formatação pedida: remover 2 zeros finais)
       if(data.msg_type==='tick'){
         const q = Number(data.tick.quote);
         let s = q.toFixed(5);
-        if(s.endsWith('00')) s = s.slice(0,-2); // remove sempre dois zeros finais, se existirem
+        if(s.endsWith('00')) s = s.slice(0,-2);
         els.tickPrice.textContent = s;
+      }
+
+      // candles stream
+      if(data.msg_type==='candles'){
+        // Data pode vir como array inicial (count) ou unitária em stream
+        const arr = Array.isArray(data.candles) ? data.candles : [data.candles];
+        // Mapeia para {time, open, high, low, close}
+        const mapped = arr.map(c=>({
+          time: Number(c.epoch),
+          open: Number(c.open),
+          high: Number(c.high),
+          low: Number(c.low),
+          close: Number(c.close),
+        }));
+        if(Array.isArray(data.candles)){
+          candleSeries.setData(mapped);
+          chart.timeScale().fitContent();
+        } else {
+          candleSeries.update(mapped[0]);
+        }
       }
 
       // proposal -> buy
@@ -327,7 +412,6 @@
         if(data.proposal && data.proposal.id){
           const id = data.proposal.id;
           const ask = Number(data.proposal.ask_price);
-          // Garantia: enviar buy com preço do proposal
           send({ buy: id, price: ask });
         }
       }
@@ -366,7 +450,6 @@
           const bal = Number(data.balance.balance);
           els.balanceInput.value = `${bal.toFixed(2)} ${data.balance.currency || currency}`;
         }
-        // captura subscription id
         if(data.subscription && data.subscription.id && !balanceSubId){
           balanceSubId = data.subscription.id;
         }
@@ -386,17 +469,50 @@
       send({ active_symbols: 'brief', product_type: 'basic' });
     }
 
+    function ensureDefaultSymbol(){
+      if(!els.symbolSelect.value){
+        els.symbolSelect.value = DEFAULT_SYMBOL;
+      }
+      if(els.symbolSelect.value){
+        subscribeTicks(els.symbolSelect.value);
+        subscribeCandles(els.symbolSelect.value);
+      }
+    }
+
     function subscribeTicks(symbol){
       if(tickSubId){ send({ forget: tickSubId }); tickSubId=null; }
       els.tickSymbol.textContent = symbol;
       els.tickNote.textContent = 'Recebendo ticks...';
       send({ ticks: symbol, subscribe: 1 });
       ws.addEventListener('message', function once(e){
-        const d = JSON.parse(e.data);
-        if(d.msg_type==='tick' && d.tick && d.subscription && d.subscription.id){
-          tickSubId = d.subscription.id;
-          ws.removeEventListener('message', once);
-        }
+        try{
+          const d = JSON.parse(e.data);
+          if(d.msg_type==='tick' && d.tick && d.subscription && d.subscription.id){
+            tickSubId = d.subscription.id;
+            ws.removeEventListener('message', once);
+          }
+        }catch(_){}
+      });
+    }
+
+    function subscribeCandles(symbol){
+      if(candleSubId){ send({ forget: candleSubId }); candleSubId=null; }
+      // histórico inicial + stream de velas 1m
+      send({
+        ticks_history: symbol,
+        style: 'candles',
+        granularity: CANDLE_GRANULARITY,
+        count: 300,
+        subscribe: 1
+      });
+      ws.addEventListener('message', function once(e){
+        try{
+          const d = JSON.parse(e.data);
+          if(d.msg_type==='candles' && d.subscription && d.subscription.id){
+            candleSubId = d.subscription.id;
+            ws.removeEventListener('message', once);
+          }
+        }catch(_){}
       });
     }
 
@@ -404,23 +520,22 @@
       if(pocSubId){ send({ forget: pocSubId }); pocSubId=null; }
       send({ proposal_open_contract: 1, contract_id, subscribe: 1 });
       ws.addEventListener('message', function once(e){
-        const d = JSON.parse(e.data);
-        if(d.msg_type==='proposal_open_contract' && d.subscription && d.subscription.id){
-          pocSubId = d.subscription.id;
-          ws.removeEventListener('message', once);
-        }
+        try{
+          const d = JSON.parse(e.data);
+          if(d.msg_type==='proposal_open_contract' && d.subscription && d.subscription.id){
+            pocSubId = d.subscription.id;
+            ws.removeEventListener('message', once);
+          }
+        }catch(_){}
       });
     }
 
     function subscribeBalance(){
       if(balanceSubId){ send({ forget: balanceSubId }); balanceSubId = null; }
       send({ balance: 1, subscribe: 1 });
-      els.refreshBalanceBtn.disabled = false;
     }
 
-    function requestBalanceOnce(){
-      send({ balance: 1 });
-    }
+    function requestBalanceOnce(){ send({ balance: 1 }); }
 
     function cleanupPosition(){
       openContractId = null;
@@ -431,7 +546,7 @@
 
     function placeMultiplier(direction){
       if(!authorized) return toast('Autorize primeiro', true);
-      const symbol = els.symbolSelect.value;
+      const symbol = els.symbolSelect.value || DEFAULT_SYMBOL;
       const amount = Number(els.stakeInput.value||0);
       const multiplier = Number(els.multInput.value||10); // x10 padrão
       if(!symbol || !amount){ els.posStatus.textContent='Preencha símbolo e stake'; return; }
@@ -447,6 +562,7 @@
         proposal: 1,
         amount,
         basis: 'stake',
+        product_type: 'multiplier',                 // *** IMPORTANTE para Multipliers ***
         contract_type: direction==='up' ? 'MULTUP' : 'MULTDOWN',
         currency,
         symbol,
@@ -467,13 +583,16 @@
       if(ws && ws.readyState===1) ws.close();
       if(balanceSubId){ send({ forget: balanceSubId }); balanceSubId=null; }
       if(tickSubId){ send({ forget: tickSubId }); tickSubId=null; }
+      if(candleSubId){ send({ forget: candleSubId }); candleSubId=null; }
       clearTokens();
       selectedToken=null; loginId=null; setAuthUI(false);
       els.accountSelect.innerHTML = '';
+      candleSeries.setData([]);
       toast('Sessão limpa.');
     };
 
-    els.useAccountBtn.onclick = ()=>{
+    // Troca de conta -> autoriza imediatamente e atualiza saldo automaticamente
+    els.accountSelect.onchange = ()=>{
       const opt = els.accountSelect.value;
       if(!opt) return;
       const tokens = getStoredTokens();
@@ -482,13 +601,17 @@
       localStorage.setItem('POINT_SELECTED', JSON.stringify(chosen));
       if(ws && ws.readyState===1) authorize(chosen.token, chosen.account, chosen.currency);
       else connectWS();
-      // Atualiza saldo para a conta escolhida
-      setTimeout(()=>{ subscribeBalance(); }, 200);
+      setTimeout(()=>{ subscribeBalance(); requestBalanceOnce(); }, 200);
     };
 
-    els.refreshBalanceBtn.onclick = ()=> requestBalanceOnce();
+    // Símbolo mudou -> re-assinar ticks e velas
+    els.symbolSelect.onchange = (e)=>{
+      const sym = e.target.value;
+      if(!sym) return;
+      subscribeTicks(sym);
+      subscribeCandles(sym);
+    };
 
-    els.symbolSelect.onchange = (e)=> subscribeTicks(e.target.value);
     els.upBtn.onclick = ()=>placeMultiplier('up');
     els.downBtn.onclick = ()=>placeMultiplier('down');
     els.closeBtn.onclick = ()=>{
@@ -508,14 +631,14 @@
         els.accountSelect.appendChild(o);
       });
       els.accountSelect.disabled = false;
-      els.useAccountBtn.disabled = false;
-      // conectar WS e autorizar na primeira conta por padrão
-      connectWS();
+
+      // escolher automática a primeira conta e autorizar
       const first = tokens[0];
       localStorage.setItem('POINT_SELECTED', JSON.stringify(first));
+      connectWS();
       authorize(first.token, first.account, first.currency);
     } else {
-      // ainda sem OAuth -> conecta WS só para status
+      // ainda sem OAuth -> conecta WS só para status e carrega gráfico após login
       connectWS();
     }
   </script>
