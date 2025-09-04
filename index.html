@@ -67,7 +67,7 @@
 
     <!-- LAYOUT -->
     <div class="layout">
-      <!-- ESQUERDA: POSIÇÕES (múltiplas) -->
+      <!-- ESQUERDA: POSIÇÕES -->
       <section class="card rounded-2xl p-4">
         <div class="flex items-center justify-between mb-3">
           <div class="text-xs uppercase tracking-wide text-slate-400">Posição</div>
@@ -142,7 +142,6 @@
                 <input id="slInput" type="number" min="1" step="1" placeholder="ex: 130" class="pill w-full px-3 py-2 rounded-xl bg-transparent text-slate-200" disabled />
               </div>
             </div>
-            <!-- Deal Cancellation removido -->
           </div>
         </section>
 
@@ -166,9 +165,10 @@
     const WS_URL  = `wss://ws.derivws.com/websockets/v3?app_id=${APP_ID}`;
     const OAUTH_URL = `https://oauth.deriv.com/oauth2/authorize?app_id=${APP_ID}`;
 
-    // ordem preferida apenas para ORGANIZAR quando a API aceitar vários
+    // ordem preferida apenas para organizar a lista quando a API aceitar vários
     const PREFERRED_MULTS = [10,15,20,40,50,80,100,200,250,350,400,450,500,700,800,1300,1600,2500,3200];
 
+    // símbolo padrão: Volatility 100 (1s)
     const DEFAULT_SYMBOL_REGEX = /Volatility 100 \(1s\)/i;
 
     // ========= ESTADO =========
@@ -176,8 +176,12 @@
     let tickSubId=null, ohlcSubId=null, balanceSubId=null;
     let lwChart=null, candleSeries=null, currentSymbol=null, currentGranularity=60, liveBar=null;
 
+    // posições abertas
     const positions = new Map();
-    let currentAllowedMultipliers = []; // vindo de contracts_for
+
+    // cache de multiplicadores por símbolo (para preencher instantaneamente)
+    const multCache = new Map();
+    let currentAllowedMultipliers = [];
 
     // ========= ÁUDIO GANHO =========
     let audioCtx = null;
@@ -226,17 +230,24 @@
       m = m.replace(/Market is closed/i,'O mercado está fechado');
       m = m.replace(/Insufficient balance/i,'Saldo insuficiente');
       m = m.replace(/Not authorized/i,'Não autorizado');
+      m = m.replace(/Unrecognised request/i,'Pedido não reconhecido');
       m = m.replace(/Multiplier is not in acceptable range\. Accepts (.+)$/i,'O multiplicador selecionado não é aceite. Aceites: $1');
       return m;
     }
     function toast(msg,isErr=false){
       const s=String(msg||'');
-      // Se vier "Accepts", sincroniza o seletor com a lista aceita e pede ao usuário escolher (sem auto-ajustar)
+      // Se vier de contracts_for, não poluir UI (tratar silenciosamente)
+      try{
+        const obj = typeof msg==='object' ? msg : null;
+        if(obj && obj.echo_req && obj.echo_req.contracts_for){ console.warn('contracts_for erro silencioso:', obj.error?.message||msg); return; }
+      }catch(e){}
+      // Se vier "Accepts", só informa em PT e sincroniza a lista
       if(isErr && /Accepts/i.test(s)){
         const raw = s.split('Accepts')[1]?.replace(':','').trim() || '';
         const values = raw.split(',').map(x=>Number(x.trim())).filter(Number.isFinite).sort((a,b)=>a-b);
         if(values.length){
           currentAllowedMultipliers = values.slice();
+          multCache.set(currentSymbol, values.slice());
           setMultiplierOptions(values,true);
           els.posStatus.textContent = 'Erro: ' + translateError(s);
         }
@@ -299,11 +310,10 @@
     function clearTokens(){ localStorage.removeItem('POINT_TOKENS'); localStorage.removeItem('POINT_SELECTED'); }
 
     // ========= WS =========
-    let wsObj=null;
     function connectWS(){
-      if(wsObj&&wsObj.readyState===1) return;
-      wsObj=new WebSocket(WS_URL);
-      wsObj.onopen=()=>{
+      if(ws&&ws.readyState===1) return;
+      ws=new WebSocket(WS_URL);
+      ws.onopen=()=>{
         setConnectedUI(true);
         const remembered=JSON.parse(localStorage.getItem('POINT_SELECTED')||'null');
         const tokens=getStoredTokens();
@@ -312,16 +322,25 @@
           if(match) authorize(match.token,match.account,match.currency);
         }
       };
-      wsObj.onclose=()=>{ setConnectedUI(false); setAuthUI(false); };
-      wsObj.onmessage=handleMessage;
-      wsObj.onerror=()=>toast('WebSocket error',true);
+      ws.onclose=()=>{ setConnectedUI(false); setAuthUI(false); };
+      ws.onmessage=handleMessage;
+      ws.onerror=()=>toast('WebSocket error',true);
     }
-    function send(msg){ if(!wsObj||wsObj.readyState!==1){ toast('WS não conectado',true); return; } wsObj.send(JSON.stringify(msg)); }
+    function send(msg){ if(!ws||ws.readyState!==1){ toast('WS não conectado',true); return; } ws.send(JSON.stringify(msg)); }
 
     // ========= HANDLER =========
     function handleMessage(evt){
       const data=JSON.parse(evt.data);
-      if(data.error){ toast(data.error.message||'Erro desconhecido',true); return; }
+
+      if(data.error){
+        // silenciar erros vindos de contracts_for (apenas consola)
+        if(data.echo_req && data.echo_req.contracts_for){
+          console.warn('contracts_for erro silencioso:', data.error.message);
+          return;
+        }
+        toast(data.error.message||'Erro desconhecido',true);
+        return;
+      }
 
       if(data.msg_type==='authorize'){
         currency=data.authorize.currency||'USD';
@@ -332,6 +351,8 @@
         const list=(data.active_symbols||[]).map(s=>({
           symbol:s.symbol, display:s.display_name, market:s.market, submarket:(s.submarket||'').toLowerCase()
         }));
+
+        // Agrupar por categorias
         const groups = {};
         function groupPush(key,label,item){ if(!groups[key]) groups[key]={label,items:[]}; groups[key].items.push(item); }
         list.forEach(s=>{
@@ -347,10 +368,10 @@
             else if(/asia|oceania/i.test(sm)) groupPush('idx_asia','Índices Asiáticos',s);
             else if(/euro|eu/i.test(sm)) groupPush('idx_eu','Índices Europeus',s);
             else groupPush('idx_others','Índices',s);
-          } else {
-            groupPush('others','Outros',s);
-          }
+          } else groupPush('others','Outros',s);
         });
+
+        // Render do select
         els.symbolSelect.innerHTML='';
         Object.values(groups).forEach(g=>{
           g.items.sort((a,b)=>a.display.localeCompare(b.display));
@@ -363,11 +384,17 @@
         const chosen = selectDefaultSymbol();
         if(chosen){
           currentSymbol = chosen;
-          // desativa ações até sabermos os multiplicadores reais deste símbolo
-          els.multInput.disabled = true; els.upBtn.disabled = true; els.downBtn.disabled = true;
+
+          // preencher instantâneo do cache (se houver) e bloquear enquanto confirma
+          if (multCache.has(chosen)) setMultiplierOptions(multCache.get(chosen), true);
+          else setMultiplierOptions([]);
+
           subscribeTicks(currentSymbol);
           loadCandles(currentSymbol,currentGranularity);
           checkMultipliersAvailability(currentSymbol);
+
+          // PREFETCH: para resposta ultra-rápida ao trocar de símbolo
+          prefetchMultipliers(list.map(x=>x.symbol));
         }
       }
 
@@ -446,6 +473,7 @@
           });
         }
 
+        // fecho defensivo por TP/SL
         if(!pos.closed && !pos.closing){
           if(tp>0 && pl >= tp){ pos.closing=true; send({ sell: cid, price: 0 }); }
           if(sl>0 && -pl >= sl){ pos.closing=true; send({ sell: cid, price: 0 }); }
@@ -468,27 +496,36 @@
         if(data.subscription && data.subscription.id && !balanceSubId){ balanceSubId=data.subscription.id; }
       }
 
-      if(data.msg_type==='contracts_for' && data.contracts_for){
-        const a=data.contracts_for.available||[];
-        const types=a.flatMap(x=>x.contract_type||[]);
-        const hasMult=types.includes('MULTUP')||types.includes('MULTDOWN');
-        setBadge(hasMult);
+      if(data.msg_type === 'contracts_for' && data.contracts_for){
+        const echoSym = (data.echo_req && data.echo_req.contracts_for) || currentSymbol;
+        const avail = data.contracts_for.available || [];
 
-        // construir lista somente com aceites
-        let allowed=[];
-        for(const item of a){
-          if(item.contract_type && (item.contract_type.includes('MULTUP')||item.contract_type.includes('MULTDOWN'))){
-            if(Array.isArray(item.available_multipliers)) allowed=allowed.concat(item.available_multipliers);
-            if(item.multiplier_range && Array.isArray(item.multiplier_range.list)) allowed=allowed.concat(item.multiplier_range.list);
-            if(Array.isArray(item.multipliers)) allowed=allowed.concat(item.multipliers);
+        let allowed = [];
+        for (const item of avail) {
+          const t = item.contract_type || [];
+          const isMult = t.includes('MULTUP') || t.includes('MULTDOWN');
+          if (!isMult) continue;
+
+          if (Array.isArray(item.available_multipliers)) {
+            allowed = allowed.concat(item.available_multipliers);
+          }
+          if (item.multiplier_range && Array.isArray(item.multiplier_range.list)) {
+            allowed = allowed.concat(item.multiplier_range.list);
+          }
+          if (Array.isArray(item.multipliers)) {
+            allowed = allowed.concat(item.multipliers);
           }
         }
-        allowed=[...new Set(allowed.map(Number).filter(Number.isFinite))].sort((x,y)=>a-b);
-        // (BUG FIX sort): 
-        allowed = allowed.sort((x,y)=>x-y);
+        allowed = [...new Set(allowed.map(Number).filter(Number.isFinite))].sort((a, b) => a - b);
 
-        // preencher o seletor SOMENTE com os aceites; desativar botões se vazio
-        setMultiplierOptions(allowed,true);
+        // cache e pintar seletor (instantâneo quando voltar a selecionar)
+        if (echoSym) multCache.set(echoSym, allowed);
+        // se esta resposta é do símbolo atual, atualizar UI agora
+        if (echoSym === currentSymbol) setMultiplierOptions(allowed, true);
+
+        // badge
+        const hasMult = allowed.length > 0;
+        setBadge(hasMult);
       }
     }
 
@@ -499,8 +536,8 @@
       if(tickSubId){ send({ forget:tickSubId }); tickSubId=null; }
       if(els.tickSymbol) els.tickSymbol.textContent=symbol; if(els.tickNote) els.tickNote.textContent='Recebendo ticks...';
       send({ ticks:symbol, subscribe:1 });
-      wsObj.addEventListener('message', function once(e){ const d=JSON.parse(e.data);
-        if(d.msg_type==='tick'&&d.tick&&d.subscription&&d.subscription.id){ tickSubId=d.subscription.id; wsObj.removeEventListener('message',once); }
+      ws.addEventListener('message', function once(e){ const d=JSON.parse(e.data);
+        if(d.msg_type==='tick'&&d.tick&&d.subscription&&d.subscription.id){ tickSubId=d.subscription.id; ws.removeEventListener('message',once); }
       });
     }
     function subscribeOpenContract(contract_id){
@@ -611,23 +648,41 @@
       if(ohlcSubId){ send({ forget:ohlcSubId }); ohlcSubId=null; }
       send({ ticks_history:symbol, adjust_start_time:1, count:300, end:'latest', style:'candles', granularity:currentGranularity });
       send({ ohlc:1, symbol, granularity:currentGranularity, subscribe:1 });
-      wsObj.addEventListener('message', function once(e){ try{ const d=JSON.parse(e.data);
-        if(d.msg_type==='ohlc'&&d.subscription&&d.subscription.id){ ohlcSubId=d.subscription.id; wsObj.removeEventListener('message',once);} }catch(err){} });
+      ws.addEventListener('message', function once(e){ try{ const d=JSON.parse(e.data);
+        if(d.msg_type==='ohlc'&&d.subscription&&d.subscription.id){ ohlcSubId=d.subscription.id; ws.removeEventListener('message',once);} }catch(err){} });
     }
 
-    // ========= MERCADO =========
+    // ========= MULTIPLIERS =========
     function checkMultipliersAvailability(symbol){
-      // Enquanto carrega, bloquear ações
-      els.multInput.disabled = true; els.upBtn.disabled = true; els.downBtn.disabled = true;
-      setMultiplierOptions([]); // limpa
-      send({ contracts_for:symbol });
+      // pinta instantâneo do cache (se houver) e bloqueia até confirmar
+      if (multCache.has(symbol)) setMultiplierOptions(multCache.get(symbol), true);
+      else setMultiplierOptions([]);
+      // pedir à API (sem product_type)
+      send({ contracts_for: symbol, currency });
+    }
+
+    // Pré-busca para resposta super rápida ao trocar de símbolo (em lotes)
+    function prefetchMultipliers(symbols){
+      if(!Array.isArray(symbols)||!symbols.length) return;
+      let i=0;
+      const BATCH=12, DELAY=60; // limitar para evitar rate-limit/erros
+      function tick(){
+        let cnt=0;
+        while(i<symbols.length && cnt<BATCH){
+          const s = symbols[i++];
+          if(!multCache.has(s)){ send({ contracts_for: s, currency }); }
+          cnt++;
+        }
+        if(i<symbols.length) setTimeout(tick, DELAY);
+      }
+      tick();
     }
 
     // ========= EVENTOS =========
     els.loginBtn.onclick=()=>{ window.location.href=OAUTH_URL; };
     els.logoutBtn.onclick=()=>{
       positions.clear(); els.positionsList.innerHTML=''; updatePosStatus();
-      if(wsObj&&wsObj.readyState===1) wsObj.close();
+      if(ws&&ws.readyState===1) ws.close();
       if(balanceSubId){ send({ forget:balanceSubId }); balanceSubId=null; }
       if(tickSubId){ send({ forget:tickSubId }); tickSubId=null; }
       if(ohlcSubId){ send({ forget:ohlcSubId }); ohlcSubId=null; }
@@ -637,13 +692,18 @@
       const opt=els.accountSelect.value; if(!opt) return;
       const tokens=getStoredTokens(); const chosen=tokens.find(t=>t.account===opt); if(!chosen) return;
       localStorage.setItem('POINT_SELECTED',JSON.stringify(chosen));
-      if(wsObj&&wsObj.readyState===1) authorize(chosen.token,chosen.account,chosen.currency); else connectWS();
+      if(ws&&ws.readyState===1) authorize(chosen.token,chosen.account,chosen.currency); else connectWS();
       setTimeout(()=>{ subscribeBalance(); },200);
     };
     els.refreshBalanceBtn.onclick=()=> send({ balance:1 });
     els.symbolSelect.onchange=(e)=>{
       const sym=e.target.value;
-      subscribeTicks(sym); loadCandles(sym,currentGranularity); checkMultipliersAvailability(sym);
+      subscribeTicks(sym); loadCandles(sym,currentGranularity);
+
+      // mostrar imediatamente do cache (se houver) e confirmar com API
+      if (multCache.has(sym)) setMultiplierOptions(multCache.get(sym), true);
+      else setMultiplierOptions([]);
+      checkMultipliersAvailability(sym);
     };
     els.tfSelect.onchange=(e)=>{ loadCandles(els.symbolSelect.value, Number(e.target.value||60)); };
     els.upBtn.onclick=()=>{ placeMultiplier('up'); };
@@ -657,7 +717,10 @@
       // voltar ao padrão Volatility 100 (1s)
       const chosen = selectDefaultSymbol();
       if(chosen){
-        subscribeTicks(chosen); loadCandles(chosen,60); checkMultipliersAvailability(chosen);
+        subscribeTicks(chosen); loadCandles(chosen,60);
+        if (multCache.has(chosen)) setMultiplierOptions(multCache.get(chosen), true);
+        else setMultiplierOptions([]);
+        checkMultipliersAvailability(chosen);
       }
       els.tfSelect.value = '60';
     };
