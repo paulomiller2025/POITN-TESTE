@@ -34,9 +34,10 @@
       </div>
       <div class="flex items-center gap-2">
         <button id="loginBtn" class="btn px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm">Conectar</button>
-        <a href="https://track.deriv.com/_IbwR-HIUYbJ8zg8lBvFoLmNd7ZgqdRLk/1/" target="_blank" rel="noopener"
-           class="btn px-4 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white text-sm">Cadastra-se na Corretora</a>
         <button id="logoutBtn" class="btn px-3 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-slate-100 text-sm hidden">Desconectar</button>
+        <!-- Botão de afiliado (sempre visível e sempre à direita) -->
+        <a href="https://track.deriv.com/_IbwR-HIUYbJ8zg8lBvFoLmNd7ZgqdRLk/1/" target="_blank" rel="noopener"
+           class="btn px-4 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white text-sm">Cadastre-se na Corretora Deriv</a>
       </div>
     </div>
   </header>
@@ -102,6 +103,7 @@
           </div>
         </div>
         <div id="chartWrap" class="glass rounded-xl"></div>
+        <!-- Preço em tempo real (oculto) -->
         <div class="glass rounded-xl p-4 mt-3 hidden">
           <div id="tickSymbol" class="text-sm text-slate-400">—</div>
           <div class="text-3xl font-semibold mt-1" id="tickPrice">—</div>
@@ -166,7 +168,6 @@
     const WS_URL  = `wss://ws.derivws.com/websockets/v3?app_id=${APP_ID}`;
     const OAUTH_URL = `https://oauth.deriv.com/oauth2/authorize?app_id=${APP_ID}`;
 
-    // Todos os multiplicadores (renderiza sempre; ✓ marca os suportados do símbolo)
     const ALL_MULTS = [10,15,20,40,50,80,100,150,200,250,300,350,400,450,500,700,800,1000,1300,1500,1600,2000,2500,3200];
     const DEFAULT_SYMBOL_REGEX = /Volatility 100 \(1s\)/i;
 
@@ -174,11 +175,12 @@
     let ws=null, authorized=false, loginId=null, currency='USD';
     let tickSubId=null, ohlcSubId=null, balanceSubId=null;
     let lwChart=null, candleSeries=null, currentSymbol=null, currentGranularity=60, liveBar=null;
+
     let activeTicksSymbol = null;
     let activeOHLCKey = null; // `${symbol}|${granularity}`
 
     const positions = new Map();
-    const allowedBySymbol = new Map(); // symbol -> [allowed]
+    const allowedBySymbol = new Map();
     let currentAllowedMultipliers = [];
 
     // ÁUDIO (cash ao lucrar)
@@ -220,7 +222,7 @@
       if(dis){ els.balanceInput.value=''; els.balanceInput.placeholder='—'; }
     }
 
-    // mensagens PT + prefixo “Caro Trader:” (verde)
+    // PT + prefixo “Caro Trader:” (verde)
     function translateError(msg){
       let m=String(msg||'');
       m = m.replace(/Your account balance \(([^)]+)\) is insufficient to buy this contract \(([^)]+)\)\./i, 'Saldo da sua conta ($1) é insuficiente para comprar este contrato ($2).');
@@ -230,7 +232,6 @@
       m = m.replace(/Unrecognised request|Unrecognized request/i,'Pedido não reconhecido');
       m = m.replace(/You are already subscribed to ([A-Za-z0-9_\.]+)/i,'Já existe uma subscrição ativa para $1.');
       m = m.replace(/Already subscribed/i,'Já existe uma subscrição ativa.');
-      m = m.replace(/WebSocket error/i,'Falha de comunicação');
       m = m.replace(/Multiplier is not in acceptable range\. Accepts (.+)$/i,'O multiplicador selecionado não é aceite. Aceites: $1');
       return m;
     }
@@ -238,12 +239,26 @@
       els.posStatus.innerHTML = `<span class="text-emerald-400">Caro Trader:</span> <span class="text-slate-200">${text}</span>`;
     }
     function toast(msg,isErr=false){
-      const s = translateError(String(msg||''));
+      const raw = String(msg||'');
+      if(isErr && /Accepts/i.test(raw)){ // erro de multiplicador → não ajustar, só informar
+        const after = raw.split('Accepts')[1]?.replace(':','').trim() || '';
+        const values = after.split(',').map(x=>Number(x.trim())).filter(Number.isFinite).sort((a,b)=>a-b);
+        if(values.length){
+          allowedBySymbol.set(currentSymbol, values.slice());
+          currentAllowedMultipliers = values.slice();
+          updateMultiplierHighlights();
+          const list = values.map(v=>'x'+v).join(', ');
+          showTraderMessage(`O multiplicador selecionado não é suportado para este mercado. Suportados: ${list}.`);
+        } else {
+          showTraderMessage(translateError(raw));
+        }
+        return;
+      }
       if(isErr){
-        if(/WS não conectado/i.test(s)){ els.posStatus.textContent = 'Sistema não conectado'; return; }
-        showTraderMessage(s);
+        if(/WS não conectado/i.test(raw)){ els.posStatus.textContent = 'Sistema não conectado'; return; }
+        showTraderMessage(translateError(raw));
       }else{
-        els.posStatus.textContent = s;
+        els.posStatus.textContent = raw;
       }
     }
 
@@ -306,31 +321,23 @@
         if(remembered&&tokens.length){
           const match=tokens.find(t=>t.account===remembered.account);
           if(match) authorize(match.token,match.account,match.currency);
-        } else {
-          // Sem auth: ainda assim carregamos mercados e gráfico
-          initChart();
-          loadActiveSymbols();
-          renderAllMultipliers();
         }
       };
-      ws.onclose=(ev)=>{
-        setConnectedUI(false); setAuthUI(false);
-        if(!navigator.onLine){ els.posStatus.textContent='Sistema não conectado'; return; }
-        const reason = ev.reason || `Código ${ev.code}`;
-        showTraderMessage(`conexão terminada (${reason}).`);
-      };
+      ws.onclose=()=>{ setConnectedUI(false); setAuthUI(false); };
       ws.onmessage=handleMessage;
-      ws.onerror=()=>showTraderMessage('não foi possível comunicar com o servidor. Verifique a internet ou tente de novo.');
+      ws.onerror=()=>toast('Erro de WebSocket',true);
     }
     function send(msg){
-      if(!ws||ws.readyState!==1){ els.posStatus.textContent = 'Sistema não conectado'; return; }
+      if(!ws||ws.readyState!==1){ els.posStatus.textContent='Sistema não conectado'; return; }
       ws.send(JSON.stringify(msg));
     }
 
-    // ========= SUBSCRIÇÕES =========
+    // ========= SUBSCRIÇÕES: helpers =========
     function forgetAllSubscriptions(){
       if(tickSubId){ send({ forget: tickSubId }); tickSubId=null; }
       if(ohlcSubId){ send({ forget: ohlcSubId }); ohlcSubId=null; }
+      send({ forget_all: 'ticks' });
+      send({ forget_all: 'candles' });
       activeTicksSymbol = null;
       activeOHLCKey = null;
     }
@@ -338,7 +345,7 @@
     // ========= MENSAGENS =========
     function handleMessage(evt){
       const data=JSON.parse(evt.data);
-      if(data.error){ showTraderMessage(translateError(data.error.message||'Erro desconhecido')); return; }
+      if(data.error){ toast(data.error.message||'Erro desconhecido',true); return; }
 
       if(data.msg_type==='authorize'){
         loginId=data.authorize.loginid; currency=data.authorize.currency||'USD';
@@ -386,7 +393,6 @@
         }
       }
 
-      // ticks (intrabar)
       if(data.msg_type==='tick'&&data.tick){
         const q=Number(data.tick.quote), epoch=Number(data.tick.epoch), sym=data.tick.symbol;
         if(els.tickPrice){ let s=q.toFixed(5); if(s.endsWith('00')) s=s.slice(0,-2); els.tickPrice.textContent=s; }
@@ -398,7 +404,6 @@
         }
       }
 
-      // histórico inicial
       if(data.msg_type==='candles'&&Array.isArray(data.candles)){
         const bars=data.candles.map(c=>({time:+c.epoch,open:+c.open,high:+c.high,low:+c.low,close:+c.close}));
         if(candleSeries){ candleSeries.setData(bars); liveBar=bars[bars.length-1]||null; lwChart.timeScale().fitContent(); }
@@ -410,7 +415,6 @@
         if(c.complete) liveBar=null;
       }
 
-      // proposal -> buy
       if(data.msg_type==='proposal'){
         if(data.proposal && data.proposal.id){
           const p=data.proposal;
@@ -419,7 +423,6 @@
         }
       }
 
-      // buy -> criar cartão + subscrever
       if(data.msg_type==='buy'){
         if(data.buy && data.buy.contract_id){
           const meta = (data.echo_req && data.echo_req.passthrough) ? data.echo_req.passthrough : {};
@@ -430,7 +433,6 @@
         }
       }
 
-      // cada contrato aberto
       if(data.msg_type==='proposal_open_contract'){
         const poc=data.proposal_open_contract; if(!poc || !poc.contract_id) return;
         const cid=poc.contract_id;
@@ -486,7 +488,6 @@
         if(data.subscription && data.subscription.id && !balanceSubId){ balanceSubId=data.subscription.id; }
       }
 
-      // multipliers por símbolo (para destacar ✓ e validar)
       if(data.msg_type==='contracts_for' && data.contracts_for){
         const a=data.contracts_for.available||[];
         const types=a.flatMap(x=>x.contract_type||[]);
@@ -515,6 +516,7 @@
     function subscribeTicks(symbol){
       if(activeTicksSymbol===symbol && tickSubId){ return; }
       if(tickSubId){ send({ forget: tickSubId }); tickSubId=null; }
+      send({ forget_all: 'ticks' });
       activeTicksSymbol = null;
 
       if(els.tickSymbol) els.tickSymbol.textContent=symbol; if(els.tickNote) els.tickNote.textContent='Recebendo ticks...';
@@ -531,6 +533,7 @@
 
       liveBar=null; if(candleSeries){ candleSeries.setData([]); }
       if(ohlcSubId){ send({ forget: ohlcSubId }); ohlcSubId=null; }
+      send({ forget_all: 'candles' });
       activeOHLCKey = null;
 
       send({ ticks_history:symbol, adjust_start_time:1, count:300, end:'latest', style:'candles', granularity:currentGranularity });
@@ -551,74 +554,63 @@
     }
 
     function subscribeBalance(){ if(balanceSubId){ send({ forget:balanceSubId }); balanceSubId=null; } send({ balance:1, subscribe:1 }); els.refreshBalanceBtn.disabled=false; }
+
     function checkMultipliersAvailability(symbol){ send({ contracts_for:symbol, currency }); }
 
-    // ========= EVENTOS =========
-    document.getElementById('loginBtn').onclick=()=>{ window.location.href=OAUTH_URL; };
-    document.getElementById('logoutBtn').onclick=()=>{
-      positions.clear(); els.positionsList.innerHTML=''; updatePosStatus();
-      if(ws&&ws.readyState===1) ws.close();
-      forgetAllSubscriptions();
-      clearTokens(); setAuthUI(false); els.accountSelect.innerHTML=''; if(candleSeries) candleSeries.setData([]);
-    };
-    els.useAccountBtn.onclick=()=>{
-      const opt=els.accountSelect.value; if(!opt) return;
-      const tokens=getStoredTokens(); const chosen=tokens.find(t=>t.account===opt); if(!chosen) return;
-      localStorage.setItem('POINT_SELECTED',JSON.stringify(chosen));
-      if(ws&&ws.readyState===1) authorize(chosen.token,chosen.account,chosen.currency); else connectWS();
-      setTimeout(()=>{ subscribeBalance(); },200);
-    };
-    els.refreshBalanceBtn.onclick=()=> send({ balance:1 });
+    // ========= POSIÇÕES (UI) =========
+    function createPositionCard(contract_id, meta){
+      const wrap = document.createElement('div');
+      wrap.id = `pos-${contract_id}`;
+      wrap.className = 'rounded-xl border border-slate-800 p-3 space-y-2';
 
-    els.symbolSelect.onchange=(e)=>{
-      const sym=e.target.value;
-      subscribeTicks(sym);
-      loadCandles(sym,currentGranularity);
-      checkMultipliersAvailability(sym);
-      renderAllMultipliers();
-    };
+      const top = document.createElement('div');
+      top.className = 'flex items-center justify-between';
+      const title = document.createElement('div');
+      title.className = 'text-sm';
+      title.textContent = `${meta.assetName || meta.symbol} · ${meta.direction==='up'?'Up':'Down'} x${meta.multiplier}`;
+      const status = document.createElement('div');
+      status.className = 'text-xs text-slate-400';
+      status.textContent = 'Aberto';
+      top.appendChild(title); top.appendChild(status);
 
-    els.tfSelect.onchange=(e)=>{ loadCandles(els.symbolSelect.value, Number(e.target.value||60)); };
+      const grid = document.createElement('div');
+      grid.className = 'grid grid-cols-2 gap-x-3 gap-y-1 text-sm';
+      grid.innerHTML = `
+        <div class="text-slate-400">Custos do contrato</div><div class="text-slate-200" id="v_cost">${meta.amount.toFixed(2)} ${meta.currency}</div>
+        <div class="text-slate-400">Valor do contrato</div><div class="text-slate-200" id="v_value">${meta.amount.toFixed(2)} ${meta.currency}</div>
+        <div class="text-slate-400">Entrada</div><div class="text-slate-200" id="v_entry">${meta.amount.toFixed(2)} ${meta.currency}</div>
+        <div class="text-slate-400">Take profit</div><div class="text-slate-200" id="v_tp">${meta.tp>0?meta.tp.toFixed(2):'-'}</div>
+        <div class="text-slate-400">Stop loss</div><div class="text-slate-200" id="v_sl">${meta.sl>0?meta.sl.toFixed(2):'-'}</div>
+        <div class="text-slate-400">Lucro/Prejuízo</div><div class="text-slate-200 font-semibold" id="v_pl">0.00 ${meta.currency}</div>
+      `;
 
-    els.upBtn.onclick=()=>{ placeMultiplier('up'); };
-    els.downBtn.onclick=()=>{ placeMultiplier('down'); };
+      const actions = document.createElement('div');
+      actions.className = 'flex justify-end';
+      const btn = document.createElement('button');
+      btn.className = 'btn px-3 py-1 rounded-lg bg-slate-700 hover:bg-slate-600 text-xs';
+      btn.textContent = 'Fechar';
+      actions.appendChild(btn);
 
-    els.resetBtn.onclick=()=>{
-      for(const [cid,pos] of positions){ if(pos.closed){ positions.delete(cid); const el=document.getElementById(`pos-${cid}`); if(el) el.remove(); } }
-      updatePosStatus();
-      forgetAllSubscriptions();
-      els.stakeInput.value = 10; els.tpInput.value = ''; els.slInput.value = '';
-      els.tfSelect.value = '60';
-      const chosen = selectDefaultSymbol();
-      if(chosen){
-        currentSymbol = chosen;
-        subscribeTicks(chosen);
-        loadCandles(chosen,60);
-        checkMultipliersAvailability(chosen);
-      }
-      renderAllMultipliers();
-      els.posStatus.textContent = 'Histórico limpo.';
-    };
+      wrap.appendChild(top); wrap.appendChild(grid); wrap.appendChild(actions);
+      els.positionsList.prepend(wrap);
 
-    // ========= BOOT =========
-    function extractAndBoot(){
-      extractTokensFromUrl();
-      const stored=getStoredTokens();
-      if(stored.length){
-        els.accountSelect.innerHTML='';
-        stored.forEach(t=>{ const o=document.createElement('option'); o.value=t.account; o.textContent=`${t.account} • ${t.currency}`; els.accountSelect.appendChild(o); });
-        els.accountSelect.disabled=false; els.useAccountBtn.disabled=false;
-      }
-      connectWS();
-      // Se não autorizar, ainda assim o gráfico/carregamento de símbolos arranca no onopen()
+      const refs = {
+        status,
+        value: grid.querySelector('#v_value'),
+        entry: grid.querySelector('#v_entry'),
+        tp: grid.querySelector('#v_tp'),
+        sl: grid.querySelector('#v_sl'),
+        pl: grid.querySelector('#v_pl'),
+        closeBtn: btn
+      };
+      btn.onclick = ()=>{ send({ sell: contract_id, price: 0 }); };
+
+      positions.set(contract_id, {
+        meta, els: refs, subId: null, entry: meta.amount, priceLine: null, closed: false, closing: false
+      });
     }
 
-    // ========= API wrappers =========
-    function authorize(token,acct,cur){ currency=(cur||'USD').toUpperCase(); send({ authorize:token, passthrough:{acct} }); }
-
-    extractAndBoot();
-
-    // ========= AÇÕES (após definições) =========
+    // ========= AÇÕES =========
     function placeMultiplier(direction){
       if(!authorized){ showTraderMessage('por favor, autorize a conta para operar.'); return; }
       const symbol=els.symbolSelect.value;
@@ -647,6 +639,182 @@
       }
       send(req);
     }
+
+    // ========= GRÁFICO =========
+    function initChart(){
+      if(lwChart||!els.chartWrap) return;
+      lwChart=LightweightCharts.createChart(els.chartWrap,{
+        autoSize:true,
+        layout:{ background:{ type:'solid', color:'transparent' }, textColor:'#9fb0d0' },
+        grid:{ vertLines:{ color:'#1e2a46' }, horzLines:{ color:'#1e2a46' } },
+        crosshair:{ mode:LightweightCharts.CrosshairMode.Magnet },
+        rightPriceScale:{ borderColor:'#1e2a46' },
+        timeScale:{ borderColor:'#1e2a46', timeVisible:true, secondsVisible:false, rightOffset:3 }
+      });
+      candleSeries=lwChart.addCandlestickSeries({ upColor:'#22c55e', downColor:'#ef4444', wickUpColor:'#22c55e', wickDownColor:'#ef4444', borderVisible:false });
+      new ResizeObserver(()=>{ lwChart.applyOptions({}); }).observe(els.chartWrap);
+    }
+
+    function loadActiveSymbols(){ send({ active_symbols:'full' }); }
+
+    function loadCandles(symbol,granularitySec){
+      if(!symbol) return; currentSymbol=symbol; currentGranularity=Number(granularitySec||60);
+      const key = `${symbol}|${currentGranularity}`;
+      if(activeOHLCKey===key && ohlcSubId){ return; }
+
+      liveBar=null; if(candleSeries){ candleSeries.setData([]); }
+      if(ohlcSubId){ send({ forget: ohlcSubId }); ohlcSubId=null; }
+      send({ forget_all: 'candles' });
+      activeOHLCKey = null;
+
+      send({ ticks_history:symbol, adjust_start_time:1, count:300, end:'latest', style:'candles', granularity:currentGranularity });
+      send({ ohlc:1, symbol, granularity:currentGranularity, subscribe:1 });
+      ws.addEventListener('message', function once(e){ try{ const d=JSON.parse(e.data);
+        if(d.msg_type==='ohlc'&&d.subscription&&d.subscription.id){ ohlcSubId=d.subscription.id; activeOHLCKey = key; ws.removeEventListener('message',once);} }catch(err){} });
+    }
+
+    function subscribeTicks(symbol){
+      if(activeTicksSymbol===symbol && tickSubId){ return; }
+      if(tickSubId){ send({ forget: tickSubId }); tickSubId=null; }
+      send({ forget_all: 'ticks' });
+      activeTicksSymbol = null;
+
+      if(els.tickSymbol) els.tickSymbol.textContent=symbol; if(els.tickNote) els.tickNote.textContent='Recebendo ticks...';
+      send({ ticks:symbol, subscribe:1 });
+      ws.addEventListener('message', function once(e){ const d=JSON.parse(e.data);
+        if(d.msg_type==='tick'&&d.tick&&d.subscription&&d.subscription.id){ tickSubId=d.subscription.id; activeTicksSymbol = symbol; ws.removeEventListener('message',once); }
+      });
+    }
+
+    function subscribeOpenContract(contract_id){
+      send({ proposal_open_contract:1, contract_id, subscribe:1, passthrough:{contract_id} });
+      ws.addEventListener('message', function once(e){ const d=JSON.parse(e.data);
+        if(d.msg_type==='proposal_open_contract'&&d.subscription&&d.subscription.id){
+          const cid = d.proposal_open_contract.contract_id;
+          const pos = positions.get(cid); if(pos) pos.subId = d.subscription.id;
+          ws.removeEventListener('message',once);
+        }
+      });
+    }
+
+    function subscribeBalance(){ if(balanceSubId){ send({ forget:balanceSubId }); balanceSubId=null; } send({ balance:1, subscribe:1 }); els.refreshBalanceBtn.disabled=false; }
+    function checkMultipliersAvailability(symbol){ send({ contracts_for:symbol, currency }); }
+
+    // ========= POSIÇÕES (UI) =========
+    function createPositionCard(contract_id, meta){
+      const wrap = document.createElement('div');
+      wrap.id = `pos-${contract_id}`;
+      wrap.className = 'rounded-xl border border-slate-800 p-3 space-y-2';
+
+      const top = document.createElement('div');
+      top.className = 'flex items-center justify-between';
+      const title = document.createElement('div');
+      title.className = 'text-sm';
+      title.textContent = `${meta.assetName || meta.symbol} · ${meta.direction==='up'?'Up':'Down'} x${meta.multiplier}`;
+      const status = document.createElement('div');
+      status.className = 'text-xs text-slate-400';
+      status.textContent = 'Aberto';
+      top.appendChild(title); top.appendChild(status);
+
+      const grid = document.createElement('div');
+      grid.className = 'grid grid-cols-2 gap-x-3 gap-y-1 text-sm';
+      grid.innerHTML = `
+        <div class="text-slate-400">Custos do contrato</div><div class="text-slate-200" id="v_cost">${meta.amount.toFixed(2)} ${meta.currency}</div>
+        <div class="text-slate-400">Valor do contrato</div><div class="text-slate-200" id="v_value">${meta.amount.toFixed(2)} ${meta.currency}</div>
+        <div class="text-slate-400">Entrada</div><div class="text-slate-200" id="v_entry">${meta.amount.toFixed(2)} ${meta.currency}</div>
+        <div class="text-slate-400">Take profit</div><div class="text-slate-200" id="v_tp">${meta.tp>0?meta.tp.toFixed(2):'-'}</div>
+        <div class="text-slate-400">Stop loss</div><div class="text-slate-200" id="v_sl">${meta.sl>0?meta.sl.toFixed(2):'-'}</div>
+        <div class="text-slate-400">Lucro/Prejuízo</div><div class="text-slate-200 font-semibold" id="v_pl">0.00 ${meta.currency}</div>
+      `;
+
+      const actions = document.createElement('div');
+      actions.className = 'flex justify-end';
+      const btn = document.createElement('button');
+      btn.className = 'btn px-3 py-1 rounded-lg bg-slate-700 hover:bg-slate-600 text-xs';
+      btn.textContent = 'Fechar';
+      actions.appendChild(btn);
+
+      wrap.appendChild(top); wrap.appendChild(grid); wrap.appendChild(actions);
+      els.positionsList.prepend(wrap);
+
+      const refs = {
+        status,
+        value: grid.querySelector('#v_value'),
+        entry: grid.querySelector('#v_entry'),
+        tp: grid.querySelector('#v_tp'),
+        sl: grid.querySelector('#v_sl'),
+        pl: grid.querySelector('#v_pl'),
+        closeBtn: btn
+      };
+      btn.onclick = ()=>{ send({ sell: contract_id, price: 0 }); };
+
+      positions.set(contract_id, {
+        meta, els: refs, subId: null, entry: meta.amount, priceLine: null, closed: false, closing: false
+      });
+    }
+
+    // ========= EVENTOS =========
+    els.loginBtn.onclick=()=>{ window.location.href=OAUTH_URL; };
+    els.logoutBtn.onclick=()=>{
+      positions.clear(); els.positionsList.innerHTML=''; updatePosStatus();
+      if(ws&&ws.readyState===1) ws.close();
+      forgetAllSubscriptions();
+      clearTokens(); setAuthUI(false); els.accountSelect.innerHTML=''; if(candleSeries) candleSeries.setData([]);
+    };
+    els.useAccountBtn.onclick=()=>{
+      const opt=els.accountSelect.value; if(!opt) return;
+      const tokens=getStoredTokens(); const chosen=tokens.find(t=>t.account===opt); if(!chosen) return;
+      localStorage.setItem('POINT_SELECTED',JSON.stringify(chosen));
+      if(ws&&ws.readyState===1) authorize(chosen.token,chosen.account,chosen.currency); else connectWS();
+      setTimeout(()=>{ subscribeBalance(); },200);
+    };
+    els.refreshBalanceBtn.onclick=()=> send({ balance:1 });
+
+    els.symbolSelect.onchange=(e)=>{
+      const sym=e.target.value;
+      subscribeTicks(sym);
+      loadCandles(sym,currentGranularity);
+      checkMultipliersAvailability(sym);
+      renderAllMultipliers();
+    };
+
+    els.tfSelect.onchange=(e)=>{ loadCandles(els.symbolSelect.value, Number(e.target.value||60)); };
+
+    els.upBtn.onclick=()=>{ placeMultiplier('up'); };
+    els.downBtn.onclick=()=>{ placeMultiplier('down'); };
+
+    document.getElementById('resetBtn').onclick=()=>{
+      for(const [cid,pos] of positions){ if(pos.closed){ positions.delete(cid); const el=document.getElementById(`pos-${cid}`); if(el) el.remove(); } }
+      updatePosStatus();
+      forgetAllSubscriptions();
+      els.stakeInput.value = 10; els.tpInput.value = ''; els.slInput.value = '';
+      els.tfSelect.value = '60';
+      const chosen = selectDefaultSymbol();
+      if(chosen){
+        currentSymbol = chosen;
+        subscribeTicks(chosen);
+        loadCandles(chosen,60);
+        checkMultipliersAvailability(chosen);
+      }
+      renderAllMultipliers();
+      els.posStatus.textContent = 'Histórico limpo.';
+    };
+
+    // ========= BOOT =========
+    function extractAndBoot(){
+      extractTokensFromUrl();
+      const stored=getStoredTokens();
+      if(stored.length){
+        els.accountSelect.innerHTML='';
+        stored.forEach(t=>{ const o=document.createElement('option'); o.value=t.account; o.textContent=`${t.account} • ${t.currency}`; els.accountSelect.appendChild(o); });
+        els.accountSelect.disabled=false; els.useAccountBtn.disabled=false;
+        connectWS(); const first=stored[0]; localStorage.setItem('POINT_SELECTED',JSON.stringify(first)); authorize(first.token,first.account,first.currency);
+      }else{ connectWS(); initChart(); }
+    }
+
+    function authorize(token,acct,cur){ currency=(cur||'USD').toUpperCase(); send({ authorize:token, passthrough:{acct} }); }
+
+    extractAndBoot();
   </script>
 </body>
 </html>
