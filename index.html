@@ -100,7 +100,6 @@
           </div>
         </div>
         <div id="chartWrap" class="glass rounded-xl"></div>
-        <!-- Preço em tempo real (oculto) -->
         <div class="glass rounded-xl p-4 mt-3 hidden">
           <div id="tickSymbol" class="text-sm text-slate-400">—</div>
           <div class="text-3xl font-semibold mt-1" id="tickPrice">—</div>
@@ -165,10 +164,7 @@
     const WS_URL  = `wss://ws.derivws.com/websockets/v3?app_id=${APP_ID}`;
     const OAUTH_URL = `https://oauth.deriv.com/oauth2/authorize?app_id=${APP_ID}`;
 
-    // ordem preferida apenas para organizar a lista quando a API aceitar vários
     const PREFERRED_MULTS = [10,15,20,40,50,80,100,200,250,350,400,450,500,700,800,1300,1600,2500,3200];
-
-    // símbolo padrão: Volatility 100 (1s)
     const DEFAULT_SYMBOL_REGEX = /Volatility 100 \(1s\)/i;
 
     // ========= ESTADO =========
@@ -176,28 +172,23 @@
     let tickSubId=null, ohlcSubId=null, balanceSubId=null;
     let lwChart=null, candleSeries=null, currentSymbol=null, currentGranularity=60, liveBar=null;
 
-    // posições abertas
     const positions = new Map();
-
-    // cache de multiplicadores por símbolo (para preencher instantaneamente)
     const multCache = new Map();
     let currentAllowedMultipliers = [];
 
     // ========= ÁUDIO GANHO =========
     let audioCtx = null;
-    function playCash(){
-      try{
-        if(!audioCtx) audioCtx = new (window.AudioContext||window.webkitAudioContext)();
-        const t = audioCtx.currentTime + 0.01;
-        const g = audioCtx.createGain();
-        g.gain.setValueAtTime(0.0001, t);
-        g.gain.exponentialRampToValueAtTime(0.25, t+0.02);
-        g.gain.exponentialRampToValueAtTime(0.0001, t+0.35);
-        g.connect(audioCtx.destination);
-        const o1 = audioCtx.createOscillator(); o1.type='triangle'; o1.frequency.setValueAtTime(1320, t); o1.frequency.exponentialRampToValueAtTime(880, t+0.3); o1.connect(g); o1.start(t); o1.stop(t+0.35);
-        const o2 = audioCtx.createOscillator(); o2.type='square';   o2.frequency.setValueAtTime(1980, t); o2.frequency.exponentialRampToValueAtTime(990, t+0.25); o2.connect(g); o2.start(t); o2.stop(t+0.3);
-      }catch(e){}
-    }
+    function playCash(){ try{
+      if(!audioCtx) audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+      const t = audioCtx.currentTime + 0.01;
+      const g = audioCtx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.25, t+0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t+0.35);
+      g.connect(audioCtx.destination);
+      const o1 = audioCtx.createOscillator(); o1.type='triangle'; o1.frequency.setValueAtTime(1320, t); o1.frequency.exponentialRampToValueAtTime(880, t+0.3); o1.connect(g); o1.start(t); o1.stop(t+0.35);
+      const o2 = audioCtx.createOscillator(); o2.type='square';   o2.frequency.setValueAtTime(1980, t); o2.frequency.exponentialRampToValueAtTime(990, t+0.25); o2.connect(g); o2.start(t); o2.stop(t+0.3);
+    }catch(e){} }
 
     // ========= DOM =========
     const els = {
@@ -236,12 +227,6 @@
     }
     function toast(msg,isErr=false){
       const s=String(msg||'');
-      // Se vier de contracts_for, não poluir UI (tratar silenciosamente)
-      try{
-        const obj = typeof msg==='object' ? msg : null;
-        if(obj && obj.echo_req && obj.echo_req.contracts_for){ console.warn('contracts_for erro silencioso:', obj.error?.message||msg); return; }
-      }catch(e){}
-      // Se vier "Accepts", só informa em PT e sincroniza a lista
       if(isErr && /Accepts/i.test(s)){
         const raw = s.split('Accepts')[1]?.replace(':','').trim() || '';
         const values = raw.split(',').map(x=>Number(x.trim())).filter(Number.isFinite).sort((a,b)=>a-b);
@@ -270,7 +255,7 @@
       const rest = allowed.filter(v=>!top.includes(v));
       return [...top, ...rest];
     }
-    function setMultiplierOptions(allowed, forceEnable=false){
+    function setMultiplierOptions(allowed){
       const arr = Array.isArray(allowed)&&allowed.length
         ? [...new Set(allowed.map(Number).filter(Number.isFinite))].sort((a,b)=>a-b)
         : [];
@@ -283,10 +268,8 @@
         els.upBtn.disabled = !authorized;
         els.downBtn.disabled = !authorized;
       }else{
-        // nenhum multiplier disponível — desativa
         const o=document.createElement('option'); o.textContent='—'; o.value=''; els.multInput.appendChild(o);
-        els.multInput.disabled = true;
-        els.upBtn.disabled = true; els.downBtn.disabled = true;
+        els.multInput.disabled = true; els.upBtn.disabled = true; els.downBtn.disabled = true;
       }
     }
     function updatePosStatus(){
@@ -326,18 +309,15 @@
       ws.onmessage=handleMessage;
       ws.onerror=()=>toast('WebSocket error',true);
     }
-    function send(msg){ if(!ws||ws.readyState!==1){ toast('WS não conectado',true); return; } ws.send(JSON.stringify(msg)); }
+    function send(msg){ if(!ws||ws.readyState!==1){ console.warn('WS não conectado'); return; } ws.send(JSON.stringify(msg)); }
 
     // ========= HANDLER =========
     function handleMessage(evt){
       const data=JSON.parse(evt.data);
 
       if(data.error){
-        // silenciar erros vindos de contracts_for (apenas consola)
-        if(data.echo_req && data.echo_req.contracts_for){
-          console.warn('contracts_for erro silencioso:', data.error.message);
-          return;
-        }
+        // silenciar erros vindos de contracts_for (fallback cuida)
+        if(data.echo_req && data.echo_req.contracts_for){ console.warn('contracts_for erro silencioso:', data.error.message); return; }
         toast(data.error.message||'Erro desconhecido',true);
         return;
       }
@@ -385,15 +365,14 @@
         if(chosen){
           currentSymbol = chosen;
 
-          // preencher instantâneo do cache (se houver) e bloquear enquanto confirma
-          if (multCache.has(chosen)) setMultiplierOptions(multCache.get(chosen), true);
+          if (multCache.has(chosen)) setMultiplierOptions(multCache.get(chosen));
           else setMultiplierOptions([]);
 
           subscribeTicks(currentSymbol);
           loadCandles(currentSymbol,currentGranularity);
           checkMultipliersAvailability(currentSymbol);
 
-          // PREFETCH: para resposta ultra-rápida ao trocar de símbolo
+          // PREFETCH rápido para encher o cache e ficar “instantâneo”
           prefetchMultipliers(list.map(x=>x.symbol));
         }
       }
@@ -473,7 +452,6 @@
           });
         }
 
-        // fecho defensivo por TP/SL
         if(!pos.closed && !pos.closing){
           if(tp>0 && pl >= tp){ pos.closing=true; send({ sell: cid, price: 0 }); }
           if(sl>0 && -pl >= sl){ pos.closing=true; send({ sell: cid, price: 0 }); }
@@ -518,14 +496,9 @@
         }
         allowed = [...new Set(allowed.map(Number).filter(Number.isFinite))].sort((a, b) => a - b);
 
-        // cache e pintar seletor (instantâneo quando voltar a selecionar)
         if (echoSym) multCache.set(echoSym, allowed);
-        // se esta resposta é do símbolo atual, atualizar UI agora
-        if (echoSym === currentSymbol) setMultiplierOptions(allowed, true);
-
-        // badge
-        const hasMult = allowed.length > 0;
-        setBadge(hasMult);
+        if (echoSym === currentSymbol) setMultiplierOptions(allowed);
+        setBadge(allowed.length>0);
       }
     }
 
@@ -540,9 +513,7 @@
         if(d.msg_type==='tick'&&d.tick&&d.subscription&&d.subscription.id){ tickSubId=d.subscription.id; ws.removeEventListener('message',once); }
       });
     }
-    function subscribeOpenContract(contract_id){
-      send({ proposal_open_contract:1, contract_id, subscribe:1 });
-    }
+    function subscribeOpenContract(contract_id){ send({ proposal_open_contract:1, contract_id, subscribe:1 }); }
     function subscribeBalance(){ if(balanceSubId){ send({ forget:balanceSubId }); balanceSubId=null; } send({ balance:1, subscribe:1 }); els.refreshBalanceBtn.disabled=false; }
 
     // ========= POSIÇÕES (UI) =========
@@ -582,15 +553,8 @@
       wrap.appendChild(top); wrap.appendChild(grid); wrap.appendChild(actions);
       els.positionsList.prepend(wrap);
 
-      const refs = {
-        status,
-        value: grid.querySelector('#v_value'),
-        entry: grid.querySelector('#v_entry'),
-        tp: grid.querySelector('#v_tp'),
-        sl: grid.querySelector('#v_sl'),
-        pl: grid.querySelector('#v_pl'),
-        closeBtn: btn
-      };
+      const refs = { status, value: grid.querySelector('#v_value'), entry: grid.querySelector('#v_entry'),
+        tp: grid.querySelector('#v_tp'), sl: grid.querySelector('#v_sl'), pl: grid.querySelector('#v_pl'), closeBtn: btn };
       btn.onclick = ()=>{ send({ sell: contract_id, price: 0 }); };
 
       positions.set(contract_id, { meta, els: refs, subId:null, entry: meta.amount, priceLine:null, closed:false, closing:false });
@@ -604,13 +568,10 @@
       const multiplier=Number(els.multInput.value||0);
 
       if(!symbol || !Number.isFinite(amount) || amount<=0){ els.posStatus.textContent='Preencha símbolo e stake'; return; }
-      // NUNCA auto-ajustar; se não for aceito, bloquear com instrução em PT
       if(!currentAllowedMultipliers.includes(multiplier)){
-        if(currentAllowedMultipliers.length){
-          els.posStatus.textContent='Erro: O multiplicador selecionado não é aceite para este mercado. Escolha um dos disponíveis no seletor.';
-        }else{
-          els.posStatus.textContent='Erro: Não há multiplicadores disponíveis para este mercado.';
-        }
+        els.posStatus.textContent = currentAllowedMultipliers.length
+          ? 'Erro: O multiplicador selecionado não é aceite para este mercado. Escolha um dos disponíveis no seletor.'
+          : 'Erro: Não há multiplicadores disponíveis para este mercado.';
         return;
       }
 
@@ -654,23 +615,29 @@
 
     // ========= MULTIPLIERS =========
     function checkMultipliersAvailability(symbol){
-      // pinta instantâneo do cache (se houver) e bloqueia até confirmar
-      if (multCache.has(symbol)) setMultiplierOptions(multCache.get(symbol), true);
-      else setMultiplierOptions([]);
-      // pedir à API (sem product_type)
-      send({ contracts_for: symbol, currency });
+      if(!symbol) return;
+      if (multCache.has(symbol)) setMultiplierOptions(multCache.get(symbol)); else setMultiplierOptions([]);
+
+      // Fallback inteligente: multipliers -> basic -> sem product_type
+      const variants = [
+        { contracts_for: symbol, product_type: 'multipliers', currency },
+        { contracts_for: symbol, product_type: 'basic',       currency },
+        { contracts_for: symbol,                               currency },
+      ];
+      for (const req of variants) send(req);
     }
 
-    // Pré-busca para resposta super rápida ao trocar de símbolo (em lotes)
+    // Pré-busca agressiva com fallback para “instantâneo”
     function prefetchMultipliers(symbols){
       if(!Array.isArray(symbols)||!symbols.length) return;
-      let i=0;
-      const BATCH=12, DELAY=60; // limitar para evitar rate-limit/erros
+      let i=0; const BATCH=16, DELAY=40;
       function tick(){
         let cnt=0;
         while(i<symbols.length && cnt<BATCH){
-          const s = symbols[i++];
-          if(!multCache.has(s)){ send({ contracts_for: s, currency }); }
+          const s = symbols[i++]; if(!s || multCache.has(s)) { cnt++; continue; }
+          send({ contracts_for: s, product_type:'multipliers', currency });
+          send({ contracts_for: s, product_type:'basic',       currency });
+          send({ contracts_for: s,                              currency });
           cnt++;
         }
         if(i<symbols.length) setTimeout(tick, DELAY);
@@ -679,6 +646,14 @@
     }
 
     // ========= EVENTOS =========
+    const extractTokensFromUrl = ()=>{
+      const q=new URLSearchParams(location.search); const tokens=[];
+      for(let i=1;i<=10;i++){ const acct=q.get(`acct${i}`),token=q.get(`token${i}`),cur=q.get(`cur${i}`); if(acct&&token){ tokens.push({account:acct.toUpperCase(),token,currency:(cur||'USD').toUpperCase()}); } }
+      if(tokens.length){ localStorage.setItem('POINT_TOKENS',JSON.stringify(tokens)); history.replaceState({},document.title,location.pathname); }
+    };
+    const getStoredTokens = ()=>{ try{return JSON.parse(localStorage.getItem('POINT_TOKENS')||'[]');}catch(e){return[]} };
+    const clearTokens = ()=>{ localStorage.removeItem('POINT_TOKENS'); localStorage.removeItem('POINT_SELECTED'); };
+
     els.loginBtn.onclick=()=>{ window.location.href=OAUTH_URL; };
     els.logoutBtn.onclick=()=>{
       positions.clear(); els.positionsList.innerHTML=''; updatePosStatus();
@@ -699,27 +674,20 @@
     els.symbolSelect.onchange=(e)=>{
       const sym=e.target.value;
       subscribeTicks(sym); loadCandles(sym,currentGranularity);
-
-      // mostrar imediatamente do cache (se houver) e confirmar com API
-      if (multCache.has(sym)) setMultiplierOptions(multCache.get(sym), true);
-      else setMultiplierOptions([]);
+      if (multCache.has(sym)) setMultiplierOptions(multCache.get(sym)); else setMultiplierOptions([]);
       checkMultipliersAvailability(sym);
     };
     els.tfSelect.onchange=(e)=>{ loadCandles(els.symbolSelect.value, Number(e.target.value||60)); };
     els.upBtn.onclick=()=>{ placeMultiplier('up'); };
     els.downBtn.onclick=()=>{ placeMultiplier('down'); };
     document.getElementById('resetBtn').onclick=()=>{
-      // remove cartões fechados
       for(const [cid,pos] of positions){ if(pos.closed){ positions.delete(cid); const el=document.getElementById(`pos-${cid}`); if(el) el.remove(); } }
       updatePosStatus();
-      // repor inputs
       els.stakeInput.value = 10; els.tpInput.value = ''; els.slInput.value = '';
-      // voltar ao padrão Volatility 100 (1s)
       const chosen = selectDefaultSymbol();
       if(chosen){
         subscribeTicks(chosen); loadCandles(chosen,60);
-        if (multCache.has(chosen)) setMultiplierOptions(multCache.get(chosen), true);
-        else setMultiplierOptions([]);
+        if (multCache.has(chosen)) setMultiplierOptions(multCache.get(chosen)); else setMultiplierOptions([]);
         checkMultipliersAvailability(chosen);
       }
       els.tfSelect.value = '60';
