@@ -316,7 +316,6 @@
       const data=JSON.parse(evt.data);
 
       if(data.error){
-        // silenciar erros vindos de contracts_for (fallback cuida)
         if(data.echo_req && data.echo_req.contracts_for){ console.warn('contracts_for erro silencioso:', data.error.message); return; }
         toast(data.error.message||'Erro desconhecido',true);
         return;
@@ -516,109 +515,12 @@
     function subscribeOpenContract(contract_id){ send({ proposal_open_contract:1, contract_id, subscribe:1 }); }
     function subscribeBalance(){ if(balanceSubId){ send({ forget:balanceSubId }); balanceSubId=null; } send({ balance:1, subscribe:1 }); els.refreshBalanceBtn.disabled=false; }
 
-    // ========= POSIÇÕES (UI) =========
-    function createPositionCard(contract_id, meta){
-      const wrap = document.createElement('div');
-      wrap.id = `pos-${contract_id}`;
-      wrap.className = 'rounded-xl border border-slate-800 p-3 space-y-2';
-
-      const top = document.createElement('div');
-      top.className = 'flex items-center justify-between';
-      const title = document.createElement('div');
-      title.className = 'text-sm';
-      title.textContent = `${meta.assetName || meta.symbol} · ${meta.direction==='up'?'Up':'Down'} x${meta.multiplier}`;
-      const status = document.createElement('div');
-      status.className = 'text-xs text-slate-400';
-      status.textContent = 'Aberto';
-      top.appendChild(title); top.appendChild(status);
-
-      const grid = document.createElement('div');
-      grid.className = 'grid grid-cols-2 gap-x-3 gap-y-1 text-sm';
-      grid.innerHTML = `
-        <div class="text-slate-400">Custos do contrato</div><div class="text-slate-200" id="v_value_init">${meta.amount.toFixed(2)} ${meta.currency}</div>
-        <div class="text-slate-400">Valor do contrato</div><div class="text-slate-200" id="v_value">${meta.amount.toFixed(2)} ${meta.currency}</div>
-        <div class="text-slate-400">Entrada</div><div class="text-slate-200" id="v_entry">${meta.amount.toFixed(2)} ${meta.currency}</div>
-        <div class="text-slate-400">Take profit</div><div class="text-slate-200" id="v_tp">${meta.tp>0?meta.tp.toFixed(2):'-'}</div>
-        <div class="text-slate-400">Stop loss</div><div class="text-slate-200" id="v_sl">${meta.sl>0?meta.sl.toFixed(2):'-'}</div>
-        <div class="text-slate-400">Lucro/Prejuízo</div><div class="text-slate-200 font-semibold" id="v_pl">0.00 ${meta.currency}</div>
-      `;
-
-      const actions = document.createElement('div');
-      actions.className = 'flex justify-end';
-      const btn = document.createElement('button');
-      btn.className = 'btn px-3 py-1 rounded-lg bg-slate-700 hover:bg-slate-600 text-xs';
-      btn.textContent = 'Fechar';
-      actions.appendChild(btn);
-
-      wrap.appendChild(top); wrap.appendChild(grid); wrap.appendChild(actions);
-      els.positionsList.prepend(wrap);
-
-      const refs = { status, value: grid.querySelector('#v_value'), entry: grid.querySelector('#v_entry'),
-        tp: grid.querySelector('#v_tp'), sl: grid.querySelector('#v_sl'), pl: grid.querySelector('#v_pl'), closeBtn: btn };
-      btn.onclick = ()=>{ send({ sell: contract_id, price: 0 }); };
-
-      positions.set(contract_id, { meta, els: refs, subId:null, entry: meta.amount, priceLine:null, closed:false, closing:false });
-    }
-
-    // ========= AÇÕES =========
-    function placeMultiplier(direction){
-      if(!authorized){ els.posStatus.textContent='Erro: Não autorizado'; return; }
-      const symbol=els.symbolSelect.value;
-      const amount=Number(els.stakeInput.value||0);
-      const multiplier=Number(els.multInput.value||0);
-
-      if(!symbol || !Number.isFinite(amount) || amount<=0){ els.posStatus.textContent='Preencha símbolo e stake'; return; }
-      if(!currentAllowedMultipliers.includes(multiplier)){
-        els.posStatus.textContent = currentAllowedMultipliers.length
-          ? 'Erro: O multiplicador selecionado não é aceite para este mercado. Escolha um dos disponíveis no seletor.'
-          : 'Erro: Não há multiplicadores disponíveis para este mercado.';
-        return;
-      }
-
-      const tp=Number(els.tpInput.value||0), sl=Number(els.slInput.value||0);
-      const meta = { symbol, amount, multiplier, direction, tp, sl, currency, assetName: els.symbolSelect.selectedOptions[0]?.textContent || symbol };
-
-      els.posStatus.textContent='Enviando proposal...';
-
-      const req={ proposal:1, amount, basis:'stake', contract_type: direction==='up' ? 'MULTUP' : 'MULTDOWN', currency, symbol, multiplier, passthrough: meta };
-      if(tp>0 || sl>0){
-        req.limit_order = {};
-        if(tp>0) req.limit_order.take_profit = tp;
-        if(sl>0) req.limit_order.stop_loss = sl;
-      }
-      send(req);
-    }
-
-    // ========= GRÁFICO =========
-    function initChart(){
-      if(lwChart||!els.chartWrap) return;
-      lwChart=LightweightCharts.createChart(els.chartWrap,{
-        autoSize:true,
-        layout:{ background:{ type:'solid', color:'transparent' }, textColor:'#9fb0d0' },
-        grid:{ vertLines:{ color:'#1e2a46' }, horzLines:{ color:'#1e2a46' } },
-        crosshair:{ mode:LightweightCharts.CrosshairMode.Magnet },
-        rightPriceScale:{ borderColor:'#1e2a46' },
-        timeScale:{ borderColor:'#1e2a46', timeVisible:true, secondsVisible:false, rightOffset:3 }
-      });
-      candleSeries=lwChart.addCandlestickSeries({ upColor:'#22c55e', downColor:'#ef4444', wickUpColor:'#22c55e', wickDownColor:'#ef4444', borderVisible:false });
-      new ResizeObserver(()=>{ lwChart.applyOptions({}); }).observe(els.chartWrap);
-    }
-    function loadCandles(symbol,granularitySec){
-      if(!symbol) return; currentSymbol=symbol; currentGranularity=Number(granularitySec||60);
-      liveBar=null; if(candleSeries){ candleSeries.setData([]); }
-      if(ohlcSubId){ send({ forget:ohlcSubId }); ohlcSubId=null; }
-      send({ ticks_history:symbol, adjust_start_time:1, count:300, end:'latest', style:'candles', granularity:currentGranularity });
-      send({ ohlc:1, symbol, granularity:currentGranularity, subscribe:1 });
-      ws.addEventListener('message', function once(e){ try{ const d=JSON.parse(e.data);
-        if(d.msg_type==='ohlc'&&d.subscription&&d.subscription.id){ ohlcSubId=d.subscription.id; ws.removeEventListener('message',once);} }catch(err){} });
-    }
-
     // ========= MULTIPLIERS =========
     function checkMultipliersAvailability(symbol){
       if(!symbol) return;
       if (multCache.has(symbol)) setMultiplierOptions(multCache.get(symbol)); else setMultiplierOptions([]);
 
-      // Fallback inteligente: multipliers -> basic -> sem product_type
+      // Fallback: multipliers -> basic -> sem product_type
       const variants = [
         { contracts_for: symbol, product_type: 'multipliers', currency },
         { contracts_for: symbol, product_type: 'basic',       currency },
@@ -627,7 +529,7 @@
       for (const req of variants) send(req);
     }
 
-    // Pré-busca agressiva com fallback para “instantâneo”
+    // Pré-busca agressiva com fallback (para ficar “instantâneo” ao trocar)
     function prefetchMultipliers(symbols){
       if(!Array.isArray(symbols)||!symbols.length) return;
       let i=0; const BATCH=16, DELAY=40;
@@ -646,14 +548,6 @@
     }
 
     // ========= EVENTOS =========
-    const extractTokensFromUrl = ()=>{
-      const q=new URLSearchParams(location.search); const tokens=[];
-      for(let i=1;i<=10;i++){ const acct=q.get(`acct${i}`),token=q.get(`token${i}`),cur=q.get(`cur${i}`); if(acct&&token){ tokens.push({account:acct.toUpperCase(),token,currency:(cur||'USD').toUpperCase()}); } }
-      if(tokens.length){ localStorage.setItem('POINT_TOKENS',JSON.stringify(tokens)); history.replaceState({},document.title,location.pathname); }
-    };
-    const getStoredTokens = ()=>{ try{return JSON.parse(localStorage.getItem('POINT_TOKENS')||'[]');}catch(e){return[]} };
-    const clearTokens = ()=>{ localStorage.removeItem('POINT_TOKENS'); localStorage.removeItem('POINT_SELECTED'); };
-
     els.loginBtn.onclick=()=>{ window.location.href=OAUTH_URL; };
     els.logoutBtn.onclick=()=>{
       positions.clear(); els.positionsList.innerHTML=''; updatePosStatus();
@@ -693,6 +587,59 @@
       els.tfSelect.value = '60';
     };
 
+    // ========= GRÁFICO =========
+    function initChart(){
+      if(lwChart||!els.chartWrap) return;
+      lwChart=LightweightCharts.createChart(els.chartWrap,{
+        autoSize:true,
+        layout:{ background:{ type:'solid', color:'transparent' }, textColor:'#9fb0d0' },
+        grid:{ vertLines:{ color:'#1e2a46' }, horzLines:{ color:'#1e2a46' } },
+        crosshair:{ mode:LightweightCharts.CrosshairMode.Magnet },
+        rightPriceScale:{ borderColor:'#1e2a46' },
+        timeScale:{ borderColor:'#1e2a46', timeVisible:true, secondsVisible:false, rightOffset:3 }
+      });
+      candleSeries=lwChart.addCandlestickSeries({ upColor:'#22c55e', downColor:'#ef4444', wickUpColor:'#22c55e', wickDownColor:'#ef4444', borderVisible:false });
+      new ResizeObserver(()=>{ lwChart.applyOptions({}); }).observe(els.chartWrap);
+    }
+    function loadCandles(symbol,granularitySec){
+      if(!symbol) return; currentSymbol=symbol; currentGranularity=Number(granularitySec||60);
+      liveBar=null; if(candleSeries){ candleSeries.setData([]); }
+      if(ohlcSubId){ send({ forget:ohlcSubId }); ohlcSubId=null; }
+      send({ ticks_history:symbol, adjust_start_time:1, count:300, end:'latest', style:'candles', granularity:currentGranularity });
+      send({ ohlc:1, symbol, granularity:currentGranularity, subscribe:1 });
+      ws.addEventListener('message', function once(e){ try{ const d=JSON.parse(e.data);
+        if(d.msg_type==='ohlc'&&d.subscription&&d.subscription.id){ ohlcSubId=d.subscription.id; ws.removeEventListener('message',once);} }catch(err){} });
+    }
+
+    // ========= AÇÕES =========
+    function placeMultiplier(direction){
+      if(!authorized){ els.posStatus.textContent='Erro: Não autorizado'; return; }
+      const symbol=els.symbolSelect.value;
+      const amount=Number(els.stakeInput.value||0);
+      const multiplier=Number(els.multInput.value||0);
+
+      if(!symbol || !Number.isFinite(amount) || amount<=0){ els.posStatus.textContent='Preencha símbolo e stake'; return; }
+      if(!currentAllowedMultipliers.includes(multiplier)){
+        els.posStatus.textContent = currentAllowedMultipliers.length
+          ? 'Erro: O multiplicador selecionado não é aceite para este mercado. Escolha um dos disponíveis no seletor.'
+          : 'Erro: Não há multiplicadores disponíveis para este mercado.';
+        return;
+      }
+
+      const tp=Number(els.tpInput.value||0), sl=Number(els.slInput.value||0);
+      const meta = { symbol, amount, multiplier, direction, tp, sl, currency, assetName: els.symbolSelect.selectedOptions[0]?.textContent || symbol };
+
+      els.posStatus.textContent='Enviando proposal...';
+
+      const req={ proposal:1, amount, basis:'stake', contract_type: direction==='up' ? 'MULTUP' : 'MULTDOWN', currency, symbol, multiplier, passthrough: meta };
+      if(tp>0 || sl>0){
+        req.limit_order = {};
+        if(tp>0) req.limit_order.take_profit = tp;
+        if(sl>0) req.limit_order.stop_loss = sl;
+      }
+      send(req);
+    }
+
     // ========= BOOT =========
     function extractAndBoot(){
       extractTokensFromUrl();
@@ -703,9 +650,6 @@
         connectWS(); const first=stored[0]; localStorage.setItem('POINT_SELECTED',JSON.stringify(first)); authorize(first.token,first.account,first.currency);
       }else{ connectWS(); initChart(); }
     }
-    function authorize(token,acct,cur){ currency=(cur||'USD').toUpperCase(); send({ authorize:token, passthrough:{acct} }); }
-    function subscribeOpenContract(contract_id){ send({ proposal_open_contract:1, contract_id, subscribe:1 }); }
-    function subscribeBalance(){ if(balanceSubId){ send({ forget:balanceSubId }); balanceSubId=null; } send({ balance:1, subscribe:1 }); els.refreshBalanceBtn.disabled=false; }
 
     extractAndBoot();
   </script>
