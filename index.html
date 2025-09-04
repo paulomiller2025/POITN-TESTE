@@ -34,6 +34,8 @@
       </div>
       <div class="flex items-center gap-2">
         <button id="loginBtn" class="btn px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm">Conectar</button>
+        <a href="https://track.deriv.com/_IbwR-HIUYbJ8zg8lBvFoLmNd7ZgqdRLk/1/" target="_blank" rel="noopener"
+           class="btn px-4 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white text-sm">Cadastra-se na Corretora</a>
         <button id="logoutBtn" class="btn px-3 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-slate-100 text-sm hidden">Desconectar</button>
       </div>
     </div>
@@ -100,7 +102,6 @@
           </div>
         </div>
         <div id="chartWrap" class="glass rounded-xl"></div>
-        <!-- Preço em tempo real (oculto) -->
         <div class="glass rounded-xl p-4 mt-3 hidden">
           <div id="tickSymbol" class="text-sm text-slate-400">—</div>
           <div class="text-3xl font-semibold mt-1" id="tickPrice">—</div>
@@ -165,7 +166,6 @@
     const WS_URL  = `wss://ws.derivws.com/websockets/v3?app_id=${APP_ID}`;
     const OAUTH_URL = `https://oauth.deriv.com/oauth2/authorize?app_id=${APP_ID}`;
 
-    // Todos os multiplicadores visíveis
     const ALL_MULTS = [10,15,20,40,50,80,100,150,200,250,300,350,400,450,500,700,800,1000,1300,1500,1600,2000,2500,3200];
     const DEFAULT_SYMBOL_REGEX = /Volatility 100 \(1s\)/i;
 
@@ -173,13 +173,11 @@
     let ws=null, authorized=false, loginId=null, currency='USD';
     let tickSubId=null, ohlcSubId=null, balanceSubId=null;
     let lwChart=null, candleSeries=null, currentSymbol=null, currentGranularity=60, liveBar=null;
-
-    // guards anti re-subscribe
     let activeTicksSymbol = null;
     let activeOHLCKey = null; // `${symbol}|${granularity}`
 
     const positions = new Map();
-    const allowedBySymbol = new Map(); // symbol -> [allowed multipliers]
+    const allowedBySymbol = new Map(); // symbol -> [allowed]
     let currentAllowedMultipliers = [];
 
     // ÁUDIO (cash ao lucrar)
@@ -221,6 +219,7 @@
       if(dis){ els.balanceInput.value=''; els.balanceInput.placeholder='—'; }
     }
 
+    // mensagens SEMPRE em PT + prefixo “Caro Trader:” (verde)
     function translateError(msg){
       let m=String(msg||'');
       m = m.replace(/Your account balance \(([^)]+)\) is insufficient to buy this contract \(([^)]+)\)\./i, 'Saldo da sua conta ($1) é insuficiente para comprar este contrato ($2).');
@@ -230,29 +229,24 @@
       m = m.replace(/Unrecognised request|Unrecognized request/i,'Pedido não reconhecido');
       m = m.replace(/You are already subscribed to ([A-Za-z0-9_\.]+)/i,'Já existe uma subscrição ativa para $1.');
       m = m.replace(/Already subscribed/i,'Já existe uma subscrição ativa.');
+      m = m.replace(/WebSocket error/i,'Falha de comunicação');
       m = m.replace(/Multiplier is not in acceptable range\. Accepts (.+)$/i,'O multiplicador selecionado não é aceite. Aceites: $1');
       return m;
     }
 
+    function showTraderMessage(text){
+      els.posStatus.innerHTML = `<span class="text-emerald-400">Caro Trader:</span> <span class="text-slate-200">${text}</span>`;
+    }
+
     function toast(msg,isErr=false){
-      const s=String(msg||'');
-      // “Accepts …” → só informa (não ajusta)
-      if(isErr && /Accepts/i.test(s)){
-        const raw = s.split('Accepts')[1]?.replace(':','').trim() || '';
-        const values = raw.split(',').map(x=>Number(x.trim())).filter(Number.isFinite).sort((a,b)=>a-b);
-        if(values.length){
-          allowedBySymbol.set(currentSymbol, values.slice());
-          currentAllowedMultipliers = values.slice();
-          updateMultiplierHighlights(); // realça ✓
-          const list = values.map(v=>'x'+v).join(', ');
-          els.posStatus.textContent = `Erro: O multiplicador selecionado não é suportado para este mercado. Suportados: ${list}.`;
-        } else {
-          els.posStatus.textContent = `Erro: ${translateError(s)}`;
-        }
-        return;
+      const s = translateError(String(msg||''));
+      if(isErr){
+        // Se for a mensagem específica de não conectado, substitui
+        if(/WS não conectado/i.test(s)){ els.posStatus.textContent = 'Sistema não conectado'; return; }
+        showTraderMessage(s);
+      }else{
+        els.posStatus.textContent = s;
       }
-      console[isErr?'error':'log'](msg);
-      if(isErr){ els.posStatus.textContent = `Erro: ${translateError(s)}`; }
     }
 
     function setBadge(available){
@@ -264,7 +258,8 @@
         : 'px-2 py-1 rounded-lg text-xs border bg-rose-500/10 text-rose-300 border-rose-500/30';
     }
 
-    // Renderizar TODOS os multiplicadores
+    // Renderizar TODOS os multiplicadores e destacar ✓ os suportados
+    const ALL_MULTS = [...ALL_MULTS_GLOBAL=ALL_MULTS]; // evitar shadowing acidental
     function renderAllMultipliers(){
       els.multInput.innerHTML='';
       ALL_MULTS.forEach(v=>{
@@ -273,10 +268,9 @@
         els.multInput.appendChild(o);
       });
       els.multInput.disabled=false;
-      updateMultiplierHighlights(); // aplica ✓ conforme o mercado atual
+      updateMultiplierHighlights();
     }
 
-    // Realça com ✓ os suportados pelo mercado atual (mantendo todos)
     function updateMultiplierHighlights(){
       const allowed = allowedBySymbol.get(currentSymbol) || currentAllowedMultipliers || [];
       const allowedSet = new Set(allowed);
@@ -323,17 +317,17 @@
       };
       ws.onclose=()=>{ setConnectedUI(false); setAuthUI(false); };
       ws.onmessage=handleMessage;
-      ws.onerror=()=>toast('Erro de WebSocket',true);
+      ws.onerror=()=>toast('WebSocket error',true);
     }
-    function send(msg){ if(!ws||ws.readyState!==1){ toast('WS não conectado',true); return; } ws.send(JSON.stringify(msg)); }
+    function send(msg){
+      if(!ws||ws.readyState!==1){ els.posStatus.textContent = 'Sistema não conectado'; return; }
+      ws.send(JSON.stringify(msg));
+    }
 
-    // ========= SUBSCRIÇÕES: helpers =========
+    // ========= SUBSCRIÇÕES =========
     function forgetAllSubscriptions(){
       if(tickSubId){ send({ forget: tickSubId }); tickSubId=null; }
       if(ohlcSubId){ send({ forget: ohlcSubId }); ohlcSubId=null; }
-      // limpeza extra para garantir estado no servidor
-      send({ forget_all: 'ticks' });
-      send({ forget_all: 'candles' });
       activeTicksSymbol = null;
       activeOHLCKey = null;
     }
@@ -489,7 +483,7 @@
         if(data.subscription && data.subscription.id && !balanceSubId){ balanceSubId=data.subscription.id; }
       }
 
-      // multipliers por símbolo (reais — apenas para validação e realce)
+      // multipliers por símbolo (reais — para destacar ✓ e validar)
       if(data.msg_type==='contracts_for' && data.contracts_for){
         const a=data.contracts_for.available||[];
         const types=a.flatMap(x=>x.contract_type||[]);
@@ -516,10 +510,8 @@
     function loadActiveSymbols(){ send({ active_symbols:'full' }); }
 
     function subscribeTicks(symbol){
-      // evitar duplicar sub
       if(activeTicksSymbol===symbol && tickSubId){ return; }
       if(tickSubId){ send({ forget: tickSubId }); tickSubId=null; }
-      send({ forget_all: 'ticks' }); // hard clean
       activeTicksSymbol = null;
 
       if(els.tickSymbol) els.tickSymbol.textContent=symbol; if(els.tickNote) els.tickNote.textContent='Recebendo ticks...';
@@ -536,7 +528,6 @@
 
       liveBar=null; if(candleSeries){ candleSeries.setData([]); }
       if(ohlcSubId){ send({ forget: ohlcSubId }); ohlcSubId=null; }
-      send({ forget_all: 'candles' }); // hard clean
       activeOHLCKey = null;
 
       send({ ticks_history:symbol, adjust_start_time:1, count:300, end:'latest', style:'candles', granularity:currentGranularity });
@@ -615,16 +606,16 @@
 
     // ========= AÇÕES =========
     function placeMultiplier(direction){
-      if(!authorized) return toast('Não autorizado',true);
+      if(!authorized){ showTraderMessage('por favor, autorize a conta para operar.'); return; }
       const symbol=els.symbolSelect.value;
       const amount=Number(els.stakeInput.value||0);
       const multiplier=Number(els.multInput.value||0);
-      if(!symbol||!amount||!multiplier){ els.posStatus.textContent='Preencha símbolo, stake e multiplier'; return; }
+      if(!symbol||!amount||!multiplier){ showTraderMessage('preencha símbolo, stake e multiplier.'); return; }
 
       const allowed = allowedBySymbol.get(symbol) || currentAllowedMultipliers || [];
       if(Array.isArray(allowed) && allowed.length && !allowed.includes(multiplier)){
         const list = allowed.map(v=>'x'+v).join(', ');
-        els.posStatus.textContent = `O multiplicador x${multiplier} não é suportado para este mercado. Suportados: ${list}.`;
+        showTraderMessage(`o multiplicador x${multiplier} não é suportado para este mercado. Suportados: ${list}.`);
         updateMultiplierHighlights();
         return;
       }
@@ -665,8 +656,6 @@
 
       liveBar=null; if(candleSeries){ candleSeries.setData([]); }
       if(ohlcSubId){ send({ forget: ohlcSubId }); ohlcSubId=null; }
-      send({ forget_all: 'candles' }); // garante limpeza
-
       activeOHLCKey = null;
 
       send({ ticks_history:symbol, adjust_start_time:1, count:300, end:'latest', style:'candles', granularity:currentGranularity });
@@ -676,8 +665,8 @@
     }
 
     // ========= EVENTOS =========
-    els.loginBtn.onclick=()=>{ window.location.href=OAUTH_URL; };
-    els.logoutBtn.onclick=()=>{
+    document.getElementById('loginBtn').onclick=()=>{ window.location.href=OAUTH_URL; };
+    document.getElementById('logoutBtn').onclick=()=>{
       positions.clear(); els.positionsList.innerHTML=''; updatePosStatus();
       if(ws&&ws.readyState===1) ws.close();
       forgetAllSubscriptions();
@@ -697,7 +686,7 @@
       subscribeTicks(sym);
       loadCandles(sym,currentGranularity);
       checkMultipliersAvailability(sym);
-      renderAllMultipliers(); // mantém todos e realça ✓
+      renderAllMultipliers();
     };
 
     els.tfSelect.onchange=(e)=>{ loadCandles(els.symbolSelect.value, Number(e.target.value||60)); };
@@ -705,11 +694,11 @@
     els.upBtn.onclick=()=>{ placeMultiplier('up'); };
     els.downBtn.onclick=()=>{ placeMultiplier('down'); };
 
-    document.getElementById('resetBtn').onclick=()=>{
-      // limpa posições fechadas da lista
+    els.resetBtn.onclick=()=>{
+      // remover cartões fechados
       for(const [cid,pos] of positions){ if(pos.closed){ positions.delete(cid); const el=document.getElementById(`pos-${cid}`); if(el) el.remove(); } }
       updatePosStatus();
-      // limpar subscrições completamente para evitar "Já existe uma subscrição…"
+      // limpar subscrições
       forgetAllSubscriptions();
       // restaurar campos
       els.stakeInput.value = 10; els.tpInput.value = ''; els.slInput.value = '';
