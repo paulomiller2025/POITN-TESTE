@@ -20,6 +20,14 @@
     select:focus,select:active{ color:#000 !important } select option{ color:#000 }
     #chartWrap{ height:480px; transition:height .2s ease } @media (max-width:1024px){ #chartWrap{ height:420px } }
     .pl-green{ color:#22c55e !important } .pl-red{ color:#ef4444 !important }
+
+    /* Painel Robô IA (drawer) */
+    #aiPanel{
+      position:fixed; right:16px; top:88px; bottom:16px; width:360px; max-width:92vw;
+      transform: translateX(120%); transition: transform .25s ease;
+      z-index:60;
+    }
+    #aiPanel.open{ transform: translateX(0); }
   </style>
 </head>
 <body>
@@ -154,6 +162,19 @@
             <button id="upBtn" class="btn flex-1 px-4 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-40" disabled>UP (MULTUP)</button>
             <button id="downBtn" class="btn flex-1 px-4 py-3 rounded-xl bg-rose-600 hover:bg-rose-500 text-white disabled:opacity-40" disabled>DOWN (MULTDOWN)</button>
           </div>
+
+          <!-- NOVOS BOTÕES IA -->
+          <div class="flex gap-3 mt-3">
+            <button id="aiOpenBtn" class="btn flex-1 px-4 py-3 rounded-xl bg-sky-700 hover:bg-sky-600 text-white disabled:opacity-40" disabled>
+              <!-- ícone robô -->
+              <span class="inline-flex items-center gap-2">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M12 2v3M7 22h10M4 19V9a4 4 0 0 1 4-4h8a4 4 0 0 1 4 4v10" stroke="#fff" stroke-width="1.5"/><rect x="6" y="11" width="4" height="4" rx="1" stroke="#fff" stroke-width="1.5"/><rect x="14" y="11" width="4" height="4" rx="1" stroke="#fff" stroke-width="1.5"/></svg>
+                Robô IA
+              </span>
+            </button>
+            <button id="aiAutoBtn" class="btn flex-1 px-4 py-3 rounded-xl bg-purple-700 hover:bg-purple-600 text-white disabled:opacity-40" disabled>IA (Auto)</button>
+          </div>
+
           <div class="text-xs text-slate-400 mt-2">
             Multipliers: perdas limitadas ao <b>stake</b>; podes fechar a qualquer momento; TP/SL suportados.
           </div>
@@ -161,6 +182,39 @@
       </div>
     </div>
   </main>
+
+  <!-- Painel Robô IA -->
+  <div id="aiPanel" class="card rounded-2xl p-4 shadow-xl">
+    <div class="flex items-center justify-between mb-3">
+      <div class="flex items-center gap-2">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M12 2v3M7 22h10M4 19V9a4 4 0 0 1 4-4h8a4 4 0 0 1 4 4v10" stroke="#9fb0d0" stroke-width="1.5"/><rect x="6" y="11" width="4" height="4" rx="1" stroke="#9fb0d0" stroke-width="1.5"/><rect x="14" y="11" width="4" height="4" rx="1" stroke="#9fb0d0" stroke-width="1.5"/></svg>
+        <div class="text-sm font-semibold">Robô IA — Probabilidades</div>
+      </div>
+      <button id="aiCloseBtn" class="btn px-2 py-1 rounded-lg bg-slate-700 hover:bg-slate-600 text-xs">Fechar</button>
+    </div>
+
+    <div class="glass rounded-xl p-3 mb-3">
+      <div class="flex items-baseline justify-between">
+        <div class="text-xs text-slate-400">Sinal recomendado</div>
+        <div id="aiUpdatedAt" class="text-[10px] text-slate-500">—</div>
+      </div>
+      <div class="mt-1 flex items-center justify-between">
+        <div id="aiSignal" class="text-lg font-semibold">—</div>
+        <div id="aiConfidence" class="text-sm text-slate-300">Confiança: —%</div>
+      </div>
+      <button id="aiExecuteBtn" class="btn mt-3 w-full px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm">Executar sinal agora</button>
+    </div>
+
+    <div class="space-y-2">
+      <div class="text-xs uppercase tracking-wide text-slate-400">Indicadores</div>
+      <div id="aiIndicators" class="grid grid-cols-2 gap-2 text-sm">
+        <!-- preenchido por JS -->
+      </div>
+      <div class="text-[11px] text-slate-500 mt-2">
+        Nota: ferramenta experimental. Os sinais não garantem resultados. Utilize gestão de risco.
+      </div>
+    </div>
+  </div>
 
   <script>
     // ========= CONFIG =========
@@ -182,6 +236,9 @@
     const positions = new Map();
     const allowedBySymbol = new Map();
     let currentAllowedMultipliers = [];
+
+    // cache de barras por símbolo|granularity
+    const barsCache = new Map(); // key -> [{time,open,high,low,close}, ...]
 
     // ÁUDIO (cash ao lucrar)
     let audioCtx = null;
@@ -209,13 +266,20 @@
       balanceInput:document.getElementById('balanceInput'), refreshBalanceBtn:document.getElementById('refreshBalanceBtn'),
       tfSelect:document.getElementById('tfSelect'), chartWrap:document.getElementById('chartWrap'), multBadge:document.getElementById('multBadge'),
       posStatus:document.getElementById('posStatus'), positionsList:document.getElementById('positionsList'), resetBtn:document.getElementById('resetBtn'),
+
+      // IA
+      aiOpenBtn:document.getElementById('aiOpenBtn'), aiAutoBtn:document.getElementById('aiAutoBtn'),
+      aiPanel:document.getElementById('aiPanel'), aiCloseBtn:document.getElementById('aiCloseBtn'),
+      aiSignal:document.getElementById('aiSignal'), aiConfidence:document.getElementById('aiConfidence'),
+      aiIndicators:document.getElementById('aiIndicators'), aiUpdatedAt:document.getElementById('aiUpdatedAt'),
+      aiExecuteBtn:document.getElementById('aiExecuteBtn'),
     };
 
     // ========= UI helpers =========
     function setConnectedUI(on){ els.connStatus.textContent = on ? 'Conectado (WebSocket ativo)' : 'Desconectado'; }
     function setAuthUI(on){
       authorized=!!on; const dis=!on;
-      [els.accountSelect,els.useAccountBtn,els.symbolSelect,els.stakeInput,els.multInput,els.tpInput,els.slInput,els.upBtn,els.downBtn,els.refreshBalanceBtn,els.tfSelect]
+      [els.accountSelect,els.useAccountBtn,els.symbolSelect,els.stakeInput,els.multInput,els.tpInput,els.slInput,els.upBtn,els.downBtn,els.refreshBalanceBtn,els.tfSelect,els.aiOpenBtn,els.aiAutoBtn]
         .forEach(el=>{ el.disabled=dis; });
       els.logoutBtn.classList.toggle('hidden',!on); els.loginBtn.classList.toggle('hidden',on);
       els.loginNote.textContent = on ? 'Autorizado. Escolhe a conta e o símbolo para negociar.' : 'Clique em Conectar para iniciar o OAuth.';
@@ -240,7 +304,7 @@
     }
     function toast(msg,isErr=false){
       const raw = String(msg||'');
-      if(isErr && /Accepts/i.test(raw)){ // erro de multiplicador → não ajustar, só informar
+      if(isErr && /Accepts/i.test(raw)){ // erro de multiplicador → só informar
         const after = raw.split('Accepts')[1]?.replace(':','').trim() || '';
         const values = after.split(',').map(x=>Number(x.trim())).filter(Number.isFinite).sort((a,b)=>a-b);
         if(values.length){
@@ -401,18 +465,43 @@
           if(!liveBar||liveBar.time!==bucket){ liveBar={time:bucket,open:q,high:q,low:q,close:q}; }
           else{ if(q>liveBar.high) liveBar.high=q; if(q<liveBar.low) liveBar.low=q; liveBar.close=q; }
           candleSeries.update(liveBar);
+
+          // atualizar cache última barra em tempo real
+          const key = `${currentSymbol}|${currentGranularity}`;
+          const arr = barsCache.get(key) || [];
+          if(arr.length){
+            const last = arr[arr.length-1];
+            if(last.time===Math.floor(epoch/currentGranularity)*currentGranularity){
+              last.high = Math.max(last.high, q);
+              last.low  = Math.min(last.low, q);
+              last.close = q;
+            }
+          }
+          maybeUpdateAI();
         }
       }
 
       if(data.msg_type==='candles'&&Array.isArray(data.candles)){
         const bars=data.candles.map(c=>({time:+c.epoch,open:+c.open,high:+c.high,low:+c.low,close:+c.close}));
         if(candleSeries){ candleSeries.setData(bars); liveBar=bars[bars.length-1]||null; lwChart.timeScale().fitContent(); }
+        barsCache.set(`${currentSymbol}|${currentGranularity}`, bars.slice(-600)); // guarda até 600
+        maybeUpdateAI(true);
       }
 
       if(data.msg_type==='ohlc'&&data.ohlc){
         const c=data.ohlc; if(!candleSeries) return;
         candleSeries.update({time:+c.open_time,open:+c.open,high:+c.high,low:+c.low,close:+c.close});
         if(c.complete) liveBar=null;
+
+        // manter cache
+        const key = `${currentSymbol}|${currentGranularity}`;
+        const arr = barsCache.get(key) || [];
+        const t = +c.open_time;
+        const idx = arr.findIndex(b=>b.time===t);
+        if(idx>=0) arr[idx] = {time:t,open:+c.open,high:+c.high,low:+c.low,close:+c.close};
+        else arr.push({time:t,open:+c.open,high:+c.high,low:+c.low,close:+c.close});
+        barsCache.set(key, arr.slice(-600));
+        maybeUpdateAI(true);
       }
 
       if(data.msg_type==='proposal'){
@@ -554,7 +643,6 @@
     }
 
     function subscribeBalance(){ if(balanceSubId){ send({ forget:balanceSubId }); balanceSubId=null; } send({ balance:1, subscribe:1 }); els.refreshBalanceBtn.disabled=false; }
-
     function checkMultipliersAvailability(symbol){ send({ contracts_for:symbol, currency }); }
 
     // ========= POSIÇÕES (UI) =========
@@ -673,84 +761,168 @@
         if(d.msg_type==='ohlc'&&d.subscription&&d.subscription.id){ ohlcSubId=d.subscription.id; activeOHLCKey = key; ws.removeEventListener('message',once);} }catch(err){} });
     }
 
-    function subscribeTicks(symbol){
-      if(activeTicksSymbol===symbol && tickSubId){ return; }
-      if(tickSubId){ send({ forget: tickSubId }); tickSubId=null; }
-      send({ forget_all: 'ticks' });
-      activeTicksSymbol = null;
-
-      if(els.tickSymbol) els.tickSymbol.textContent=symbol; if(els.tickNote) els.tickNote.textContent='Recebendo ticks...';
-      send({ ticks:symbol, subscribe:1 });
-      ws.addEventListener('message', function once(e){ const d=JSON.parse(e.data);
-        if(d.msg_type==='tick'&&d.tick&&d.subscription&&d.subscription.id){ tickSubId=d.subscription.id; activeTicksSymbol = symbol; ws.removeEventListener('message',once); }
+    // ========= IA: Sinais =========
+    function ema(arr, period, accessor=(x)=>x){
+      const k = 2/(period+1); let emaPrev;
+      return arr.map((v,i)=>{
+        const val = accessor(v);
+        if(i===0){ emaPrev = val; return val; }
+        emaPrev = val*k + emaPrev*(1-k);
+        return emaPrev;
       });
     }
+    function rsi(arr, period=14, accessor=(x)=>x){
+      let gains=0, losses=0;
+      for(let i=1;i<=period;i++){
+        const ch = accessor(arr[i]) - accessor(arr[i-1]);
+        if(ch>=0) gains += ch; else losses += -ch;
+      }
+      gains/=period; losses/=period;
+      const out = [];
+      out[period] = 100 - 100/(1 + (losses===0?1000:gains/losses));
+      for(let i=period+1;i<arr.length;i++){
+        const ch = accessor(arr[i]) - accessor(arr[i-1]);
+        const gain = ch>0?ch:0;
+        const loss = ch<0?-ch:0;
+        gains = (gains*(period-1)+gain)/period;
+        losses= (losses*(period-1)+loss)/period;
+        out[i] = 100 - 100/(1 + (losses===0?1000:gains/losses));
+      }
+      return out;
+    }
+    function macd(arr, fast=12, slow=26, signalP=9, accessor=(x)=>x){
+      const closes = arr.map(accessor);
+      const emaFast = ema(arr, fast, accessor);
+      const emaSlow = ema(arr, slow, accessor);
+      const macdLine = closes.map((_,i)=> (emaFast[i]-emaSlow[i]));
+      const signal = ema(macdLine.map(v=>({v})), signalP, x=>x.v);
+      const hist = macdLine.map((v,i)=> v - (signal[i]??0));
+      return { macdLine, signal, hist };
+    }
+    function atr(arr, period=14){
+      const trs = [];
+      for(let i=1;i<arr.length;i++){
+        const h = arr[i].high, l = arr[i].low, cPrev = arr[i-1].close;
+        trs.push(Math.max(h-l, Math.abs(h-cPrev), Math.abs(l-cPrev)));
+      }
+      const out=[]; let sum=0;
+      for(let i=0;i<trs.length;i++){
+        if(i<period){ sum+=trs[i]; if(i===period-1){ out[i]=sum/period; } }
+        else { out[i] = (out[i-1]*(period-1)+trs[i])/period; }
+      }
+      return out;
+    }
+    function stddev(values){
+      const m = values.reduce((a,b)=>a+b,0)/values.length;
+      const v = values.reduce((s,x)=> s+(x-m)*(x-m), 0)/values.length;
+      return Math.sqrt(v);
+    }
 
-    function subscribeOpenContract(contract_id){
-      send({ proposal_open_contract:1, contract_id, subscribe:1, passthrough:{contract_id} });
-      ws.addEventListener('message', function once(e){ const d=JSON.parse(e.data);
-        if(d.msg_type==='proposal_open_contract'&&d.subscription&&d.subscription.id){
-          const cid = d.proposal_open_contract.contract_id;
-          const pos = positions.get(cid); if(pos) pos.subId = d.subscription.id;
-          ws.removeEventListener('message',once);
+    function computeAI(bars){
+      if(!bars || bars.length<60) return {signal:'Neutro', conf:0.0, details:{}};
+      const closes = bars.map(b=>b.close);
+      const last = bars[bars.length-1];
+
+      const ema9  = ema(bars, 9, x=>x.close);
+      const ema21 = ema(bars,21, x=>x.close);
+      const ema50 = ema(bars,50, x=>x.close);
+
+      const rsi14 = rsi(bars,14,x=>x.close);
+      const { macdLine, signal:macdSig, hist } = macd(bars,12,26,9,x=>x.close);
+      const atr14 = atr(bars,14);
+
+      const e9 = ema9[ema9.length-1], e21 = ema21[ema21.length-1], e50 = ema50[ema50.length-1];
+      const rLast = rsi14[rsi14.length-1] ?? 50;
+      const mLast = macdLine[macdLine.length-1] ?? 0;
+      const sLast = macdSig[macdSig.length-1] ?? 0;
+      const hLast = hist[hist.length-1] ?? 0;
+      const atrLast = atr14[atr14.length-1] ?? 0;
+
+      // tendência
+      const trendUp   = last.close>e50 && e9>e21 && mLast>sLast && hLast>0;
+      const trendDown = last.close<e50 && e9<e21 && mLast<sLast && hLast<0;
+
+      // força
+      const rBull = Math.max(0, (rLast-50)/50); // 0..1
+      const rBear = Math.max(0, (50-rLast)/50);
+
+      // volatilidade normalizada
+      const ret = [];
+      for(let i=1;i<closes.length;i++) ret.push((closes[i]-closes[i-1])/closes[i-1]);
+      const vol = Math.min(1, stddev(ret.slice(-50))*100); // escala simples
+
+      // scoring simples
+      let upScore = 0, downScore = 0;
+      upScore += trendUp ? 0.45 : 0;
+      downScore += trendDown ? 0.45 : 0;
+
+      upScore += rBull*0.25;
+      downScore += rBear*0.25;
+
+      upScore += (hLast>0?0.15:0);
+      downScore += (hLast<0?0.15:0);
+
+      // penaliza zonas extremas de RSI
+      if(rLast>70) downScore+=0.1;
+      if(rLast<30) upScore+=0.1;
+
+      // confiança: menor se vol muito baixa/alta
+      const confBase = 0.6 - Math.abs(vol-0.25); // pico em ~0.25
+      const conf = Math.max(0.2, Math.min(0.95, (confBase + Math.max(upScore,downScore)) ));
+
+      let signal='Neutro';
+      if(upScore>downScore && upScore>0.55) signal='UP';
+      else if(downScore>upScore && downScore>0.55) signal='DOWN';
+
+      return {
+        signal,
+        conf: +(conf*100).toFixed(1),
+        details:{
+          close:last.close, ema9:e9, ema21:e21, ema50:e50,
+          rsi:rLast, macd:mLast, macdSig:sLast, macdHist:hLast, atr:atrLast
         }
-      });
+      };
     }
 
-    function subscribeBalance(){ if(balanceSubId){ send({ forget:balanceSubId }); balanceSubId=null; } send({ balance:1, subscribe:1 }); els.refreshBalanceBtn.disabled=false; }
-    function checkMultipliersAvailability(symbol){ send({ contracts_for:symbol, currency }); }
+    let lastAICalcAt = 0;
+    function maybeUpdateAI(force=false){
+      const now = Date.now();
+      if(!force && now-lastAICalcAt<500) return;
+      lastAICalcAt = now;
 
-    // ========= POSIÇÕES (UI) =========
-    function createPositionCard(contract_id, meta){
-      const wrap = document.createElement('div');
-      wrap.id = `pos-${contract_id}`;
-      wrap.className = 'rounded-xl border border-slate-800 p-3 space-y-2';
+      const key = `${currentSymbol}|${currentGranularity}`;
+      const bars = barsCache.get(key);
+      const res = computeAI(bars);
+      renderAIPanel(res);
+      return res;
+    }
 
-      const top = document.createElement('div');
-      top.className = 'flex items-center justify-between';
-      const title = document.createElement('div');
-      title.className = 'text-sm';
-      title.textContent = `${meta.assetName || meta.symbol} · ${meta.direction==='up'?'Up':'Down'} x${meta.multiplier}`;
-      const status = document.createElement('div');
-      status.className = 'text-xs text-slate-400';
-      status.textContent = 'Aberto';
-      top.appendChild(title); top.appendChild(status);
+    function renderAIPanel(res){
+      if(!res) return;
+      els.aiSignal.textContent = res.signal;
+      els.aiSignal.classList.remove('pl-green','pl-red');
+      if(res.signal==='UP') els.aiSignal.classList.add('pl-green');
+      else if(res.signal==='DOWN') els.aiSignal.classList.add('pl-red');
+      els.aiConfidence.textContent = `Confiança: ${res.conf}%`;
+      els.aiUpdatedAt.textContent = new Date().toLocaleTimeString();
 
-      const grid = document.createElement('div');
-      grid.className = 'grid grid-cols-2 gap-x-3 gap-y-1 text-sm';
-      grid.innerHTML = `
-        <div class="text-slate-400">Custos do contrato</div><div class="text-slate-200" id="v_cost">${meta.amount.toFixed(2)} ${meta.currency}</div>
-        <div class="text-slate-400">Valor do contrato</div><div class="text-slate-200" id="v_value">${meta.amount.toFixed(2)} ${meta.currency}</div>
-        <div class="text-slate-400">Entrada</div><div class="text-slate-200" id="v_entry">${meta.amount.toFixed(2)} ${meta.currency}</div>
-        <div class="text-slate-400">Take profit</div><div class="text-slate-200" id="v_tp">${meta.tp>0?meta.tp.toFixed(2):'-'}</div>
-        <div class="text-slate-400">Stop loss</div><div class="text-slate-200" id="v_sl">${meta.sl>0?meta.sl.toFixed(2):'-'}</div>
-        <div class="text-slate-400">Lucro/Prejuízo</div><div class="text-slate-200 font-semibold" id="v_pl">0.00 ${meta.currency}</div>
+      const d = res.details || {};
+      els.aiIndicators.innerHTML = `
+        <div class="glass rounded-lg p-2"><div class="text-[11px] text-slate-400">EMA9/21/50</div><div>${(d.ema9||0).toFixed(5)} / ${(d.ema21||0).toFixed(5)} / ${(d.ema50||0).toFixed(5)}</div></div>
+        <div class="glass rounded-lg p-2"><div class="text-[11px] text-slate-400">RSI(14)</div><div>${(d.rsi||0).toFixed(2)}</div></div>
+        <div class="glass rounded-lg p-2"><div class="text-[11px] text-slate-400">MACD / Sinal</div><div>${(d.macd||0).toFixed(5)} / ${(d.macdSig||0).toFixed(5)}</div></div>
+        <div class="glass rounded-lg p-2"><div class="text-[11px] text-slate-400">Hist MACD</div><div>${(d.macdHist||0).toFixed(5)}</div></div>
+        <div class="glass rounded-lg p-2"><div class="text-[11px] text-slate-400">ATR(14)</div><div>${(d.atr||0).toFixed(5)}</div></div>
+        <div class="glass rounded-lg p-2"><div class="text-[11px] text-slate-400">Preço</div><div>${(d.close||0).toFixed(5)}</div></div>
       `;
+    }
 
-      const actions = document.createElement('div');
-      actions.className = 'flex justify-end';
-      const btn = document.createElement('button');
-      btn.className = 'btn px-3 py-1 rounded-lg bg-slate-700 hover:bg-slate-600 text-xs';
-      btn.textContent = 'Fechar';
-      actions.appendChild(btn);
-
-      wrap.appendChild(top); wrap.appendChild(grid); wrap.appendChild(actions);
-      els.positionsList.prepend(wrap);
-
-      const refs = {
-        status,
-        value: grid.querySelector('#v_value'),
-        entry: grid.querySelector('#v_entry'),
-        tp: grid.querySelector('#v_tp'),
-        sl: grid.querySelector('#v_sl'),
-        pl: grid.querySelector('#v_pl'),
-        closeBtn: btn
-      };
-      btn.onclick = ()=>{ send({ sell: contract_id, price: 0 }); };
-
-      positions.set(contract_id, {
-        meta, els: refs, subId: null, entry: meta.amount, priceLine: null, closed: false, closing: false
-      });
+    function executeAISignal(){
+      const res = maybeUpdateAI(true);
+      if(!res){ showTraderMessage('dados insuficientes para analisar.'); return; }
+      if(res.signal==='UP') placeMultiplier('up');
+      else if(res.signal==='DOWN') placeMultiplier('down');
+      else showTraderMessage('Condições incertas (sinal neutro). Ajuste timeframe ou aguarde novo candle.');
     }
 
     // ========= EVENTOS =========
@@ -800,6 +972,12 @@
       els.posStatus.textContent = 'Histórico limpo.';
     };
 
+    // Robô IA painel
+    els.aiOpenBtn.onclick = ()=>{ els.aiPanel.classList.add('open'); maybeUpdateAI(true); };
+    els.aiCloseBtn.onclick = ()=> els.aiPanel.classList.remove('open');
+    els.aiExecuteBtn.onclick = executeAISignal;
+    els.aiAutoBtn.onclick = executeAISignal;
+
     // ========= BOOT =========
     function extractAndBoot(){
       extractTokensFromUrl();
@@ -811,7 +989,6 @@
         connectWS(); const first=stored[0]; localStorage.setItem('POINT_SELECTED',JSON.stringify(first)); authorize(first.token,first.account,first.currency);
       }else{ connectWS(); initChart(); }
     }
-
     function authorize(token,acct,cur){ currency=(cur||'USD').toUpperCase(); send({ authorize:token, passthrough:{acct} }); }
 
     extractAndBoot();
