@@ -67,31 +67,14 @@
 
     <!-- LAYOUT -->
     <div class="layout">
-      <!-- ESQUERDA: POSIÇÃO -->
+      <!-- ESQUERDA: POSIÇÕES (múltiplas) -->
       <section class="card rounded-2xl p-4">
-        <div class="text-xs uppercase tracking-wide text-slate-400 mb-3">Posição</div>
-        <div id="posDetails" class="space-y-2 text-sm">
-          <div id="posStatus" class="text-sm">Nenhuma posição aberta.</div>
-          <div class="grid grid-cols-2 gap-x-3 gap-y-1 mt-2">
-            <div class="text-slate-400">Ativo</div><div id="pd_asset" class="text-slate-200">—</div>
-            <div class="text-slate-400">Tipo</div><div id="pd_type" class="text-slate-200">Multipliers</div>
-            <div class="text-slate-400">Direção</div><div id="pd_dir" class="text-slate-200">—</div>
-            <div class="text-slate-400">Moeda</div><div id="pd_ccy" class="text-slate-200">—</div>
-            <div class="col-span-2 h-[1px] bg-slate-800 my-1"></div>
-            <div class="text-slate-400">Custos do contrato</div><div id="pd_cost" class="text-slate-200">—</div>
-            <div class="text-slate-400">Valor do contrato</div><div id="pd_value" class="text-slate-200">—</div>
-            <!-- Taxa de cancelamento: oculta por pedido -->
-            <div class="text-slate-400 hidden">Taxa de cancelamento</div><div id="pd_cancel" class="text-slate-200 hidden">—</div>
-            <div class="text-slate-400">Entrada</div><div id="pd_entry" class="text-slate-200">—</div>
-            <div class="text-slate-400">Take profit</div><div id="pd_tp" class="text-slate-200">—</div>
-            <div class="text-slate-400">Stop loss</div><div id="pd_sl" class="text-slate-200">—</div>
-          </div>
-          <div class="flex items-center justify-between pt-2">
-            <div class="text-sm">Lucro/perda total:</div>
-            <div class="text-sm font-semibold" id="plVal">—</div>
-          </div>
-          <button id="closeBtn" class="btn w-full px-3 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-sm hidden">Fechar posição</button>
+        <div class="flex items-center justify-between mb-3">
+          <div class="text-xs uppercase tracking-wide text-slate-400">Posição</div>
+          <button id="resetBtn" class="btn px-2 py-1 rounded-lg bg-slate-700 hover:bg-slate-600 text-xs">Reset histórico</button>
         </div>
+        <div id="posStatus" class="text-sm">Nenhuma posição aberta.</div>
+        <div id="positionsList" class="space-y-3 mt-3 max-h-[520px] overflow-auto pr-2"></div>
       </section>
 
       <!-- CENTRO: GRÁFICO -->
@@ -117,6 +100,7 @@
           </div>
         </div>
         <div id="chartWrap" class="glass rounded-xl"></div>
+        <!-- Preço em tempo real (oculto) -->
         <div class="glass rounded-xl p-4 mt-3 hidden">
           <div id="tickSymbol" class="text-sm text-slate-400">—</div>
           <div class="text-3xl font-semibold mt-1" id="tickPrice">—</div>
@@ -158,17 +142,7 @@
                 <input id="slInput" type="number" min="1" step="1" placeholder="ex: 130" class="pill w-full px-3 py-2 rounded-xl bg-transparent text-slate-200" disabled />
               </div>
             </div>
-            <div>
-              <label class="text-sm text-slate-300">Deal Cancellation</label>
-              <select id="dcInput" class="pill w-full px-3 py-2 rounded-xl bg-transparent text-slate-200" disabled>
-                <option value="">Desligado</option>
-                <option value="5m">5m</option>
-                <option value="10m">10m</option>
-                <option value="15m">15m</option>
-                <option value="30m">30m</option>
-                <option value="60m">60m</option>
-              </select>
-            </div>
+            <!-- Deal Cancellation: removido do UI por pedido -->
           </div>
         </section>
 
@@ -179,7 +153,7 @@
             <button id="downBtn" class="btn flex-1 px-4 py-3 rounded-xl bg-rose-600 hover:bg-rose-500 text-white disabled:opacity-40" disabled>DOWN (MULTDOWN)</button>
           </div>
           <div class="text-xs text-slate-400 mt-2">
-            Multipliers: perdas limitadas ao <b>stake</b>; podes fechar a qualquer momento; TP/SL e Cancellation suportados.
+            Multipliers: perdas limitadas ao <b>stake</b>; podes fechar a qualquer momento; TP/SL suportados.
           </div>
         </section>
       </div>
@@ -187,46 +161,64 @@
   </main>
 
   <script>
-    // ======== CONFIG ========
-    const APP_ID = 98640;
-    const WS_URL = `wss://ws.derivws.com/websockets/v3?app_id=${APP_ID}`;
+    // ========= CONFIG =========
+    const APP_ID  = 98640;
+    const WS_URL  = `wss://ws.derivws.com/websockets/v3?app_id=${APP_ID}`;
     const OAUTH_URL = `https://oauth.deriv.com/oauth2/authorize?app_id=${APP_ID}`;
 
-    // ======== ESTADO ========
+    // ========= ESTADO =========
     let ws=null, authorized=false, loginId=null, currency='USD';
-    let tickSubId=null, ohlcSubId=null, pocSubId=null, balanceSubId=null, openContractId=null;
+    let tickSubId=null, ohlcSubId=null, balanceSubId=null;
     let lwChart=null, candleSeries=null, currentSymbol=null, currentGranularity=60, liveBar=null;
-    let entryPriceLine=null;
 
-    // lembra a última ordem para preencher UI corretamente
-    let lastOrder = { symbol:null, amount:0, multiplier:0, direction:null, tp:0, sl:0 };
+    // VÁRIOS CONTRATOS
+    const positions = new Map(); // contract_id -> { meta, els, subId, entry, priceLine, closed }
+    const proposalMeta = new Map(); // proposal_id -> meta
+    let lastUserActionAt = 0;
 
-    // erros só quando ação do usuário
-    let lastUserActionAt=0;
+    // ÁUDIO (som de cash em lucro)
+    let audioCtx = null;
+    function playCash(){
+      try{
+        if(!audioCtx) audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+        const t = audioCtx.currentTime + 0.01;
+        const g = audioCtx.createGain();
+        g.gain.setValueAtTime(0.0001, t);
+        g.gain.exponentialRampToValueAtTime(0.25, t+0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001, t+0.35);
+        g.connect(audioCtx.destination);
 
-    // ======== DOM ========
-    const els={
+        const o1 = audioCtx.createOscillator();
+        o1.type='triangle'; o1.frequency.setValueAtTime(1320, t);
+        o1.frequency.exponentialRampToValueAtTime(880, t+0.3);
+        o1.connect(g); o1.start(t); o1.stop(t+0.35);
+
+        const o2 = audioCtx.createOscillator();
+        o2.type='square'; o2.frequency.setValueAtTime(1980, t);
+        o2.frequency.exponentialRampToValueAtTime(990, t+0.25);
+        o2.connect(g); o2.start(t); o2.stop(t+0.3);
+      }catch(e){ /* silenciar se o navegador bloquear */ }
+    }
+
+    // ========= DOM =========
+    const els = {
       loginBtn:document.getElementById('loginBtn'), logoutBtn:document.getElementById('logoutBtn'),
       connStatus:document.getElementById('connStatus'), loginNote:document.getElementById('loginNote'),
       accountSelect:document.getElementById('accountSelect'), useAccountBtn:document.getElementById('useAccountBtn'),
       symbolSelect:document.getElementById('symbolSelect'), stakeInput:document.getElementById('stakeInput'),
       multInput:document.getElementById('multInput'), tpInput:document.getElementById('tpInput'), slInput:document.getElementById('slInput'),
-      dcInput:document.getElementById('dcInput'), upBtn:document.getElementById('upBtn'), downBtn:document.getElementById('downBtn'),
+      upBtn:document.getElementById('upBtn'), downBtn:document.getElementById('downBtn'),
       tickSymbol:document.getElementById('tickSymbol'), tickPrice:document.getElementById('tickPrice'), tickNote:document.getElementById('tickNote'),
-      posStatus:document.getElementById('posStatus'), plVal:document.getElementById('plVal'), closeBtn:document.getElementById('closeBtn'),
       balanceInput:document.getElementById('balanceInput'), refreshBalanceBtn:document.getElementById('refreshBalanceBtn'),
       tfSelect:document.getElementById('tfSelect'), chartWrap:document.getElementById('chartWrap'), multBadge:document.getElementById('multBadge'),
-      // posição
-      pd_asset:document.getElementById('pd_asset'), pd_type:document.getElementById('pd_type'), pd_dir:document.getElementById('pd_dir'), pd_ccy:document.getElementById('pd_ccy'),
-      pd_cost:document.getElementById('pd_cost'), pd_value:document.getElementById('pd_value'), pd_cancel:document.getElementById('pd_cancel'),
-      pd_entry:document.getElementById('pd_entry'), pd_tp:document.getElementById('pd_tp'), pd_sl:document.getElementById('pd_sl'),
+      posStatus:document.getElementById('posStatus'), positionsList:document.getElementById('positionsList'), resetBtn:document.getElementById('resetBtn'),
     };
 
-    // ======== HELPERS UI ========
+    // ========= UI helpers =========
     function setConnectedUI(on){ els.connStatus.textContent = on ? 'Conectado (WebSocket ativo)' : 'Desconectado'; }
     function setAuthUI(on){
       authorized=!!on; const dis=!on;
-      [els.accountSelect,els.useAccountBtn,els.symbolSelect,els.stakeInput,els.multInput,els.tpInput,els.slInput,els.dcInput,els.upBtn,els.downBtn,els.refreshBalanceBtn,els.tfSelect]
+      [els.accountSelect,els.useAccountBtn,els.symbolSelect,els.stakeInput,els.multInput,els.tpInput,els.slInput,els.upBtn,els.downBtn,els.refreshBalanceBtn,els.tfSelect]
         .forEach(el=>{ el.disabled=dis; });
       els.logoutBtn.classList.toggle('hidden',!on); els.loginBtn.classList.toggle('hidden',on);
       els.loginNote.textContent = on ? 'Autorizado. Escolhe a conta e o símbolo para negociar.' : 'Clique em Conectar para iniciar o OAuth.';
@@ -235,8 +227,8 @@
     function toast(msg,isErr=false){
       console[isErr?'error':'log'](msg);
       const recent=(Date.now()-lastUserActionAt)<4000;
-      if(isErr && recent) els.posStatus.textContent=`Erro: ${msg}`;
-      // sincroniza multiplicadores se vier “Accepts …”
+      if(isErr && recent){ els.posStatus.textContent = `Erro: ${msg}`; }
+      // se vier “Accepts …”, sincroniza multiplicadores
       if(isErr && /Accepts/i.test(String(msg))){
         const list=String(msg).split('Accepts')[1]?.replace(':','').trim();
         if(list){
@@ -260,34 +252,21 @@
       if(forceEnable || !els.multInput.disabled) els.multInput.disabled=false;
       if(els.multInput.options.length>0) els.multInput.selectedIndex=0;
     }
-    function setPL(value){
-      els.plVal.textContent = `${value.toFixed(2)} ${currency}`;
-      els.plVal.classList.remove('pl-green','pl-red');
-      if(value>0) els.plVal.classList.add('pl-green');
-      else if(value<0) els.plVal.classList.add('pl-red');
-    }
-    function createEntryLine(price, isUp){
-      removeEntryLine();
-      if(!candleSeries) return;
-      entryPriceLine = candleSeries.createPriceLine({
-        price, color: isUp ? '#22c55e' : '#ef4444', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Solid,
-        axisLabelVisible:true, title: isUp ? '▲' : '▼'
-      });
-    }
-    function removeEntryLine(){
-      if(entryPriceLine && candleSeries){ candleSeries.removePriceLine(entryPriceLine); entryPriceLine=null; }
+    function updatePosStatus(){
+      const openCount = Array.from(positions.values()).filter(p=>!p.closed).length;
+      els.posStatus.textContent = openCount ? `${openCount} posição(ões) aberta(s)` : 'Nenhuma posição aberta.';
     }
 
-    // ======== OAUTH ========
+    // ========= OAUTH / storage =========
     function extractTokensFromUrl(){
       const q=new URLSearchParams(location.search); const tokens=[];
       for(let i=1;i<=10;i++){ const acct=q.get(`acct${i}`),token=q.get(`token${i}`),cur=q.get(`cur${i}`); if(acct&&token){ tokens.push({account:acct.toUpperCase(),token,currency:(cur||'USD').toUpperCase()}); } }
       if(tokens.length){ localStorage.setItem('POINT_TOKENS',JSON.stringify(tokens)); history.replaceState({},document.title,location.pathname); }
     }
-    function getStoredTokens(){ try{return JSON.parse(localStorage.getItem('POINT_TOKENS')||'[]');}catch(e){return[];} }
+    function getStoredTokens(){ try{return JSON.parse(localStorage.getItem('POINT_TOKENS')||'[]');}catch(e){return[]} }
     function clearTokens(){ localStorage.removeItem('POINT_TOKENS'); localStorage.removeItem('POINT_SELECTED'); }
 
-    // ======== WS ========
+    // ========= WS =========
     function connectWS(){
       if(ws&&ws.readyState===1) return;
       ws=new WebSocket(WS_URL);
@@ -306,35 +285,58 @@
     }
     function send(msg){ if(!ws||ws.readyState!==1){ toast('WS não conectado',true); return; } ws.send(JSON.stringify(msg)); }
 
+    // ========= MENSAGENS =========
     function handleMessage(evt){
       const data=JSON.parse(evt.data);
       if(data.error){ toast(data.error.message||'Erro desconhecido',true); return; }
 
       if(data.msg_type==='authorize'){
-        loginId=data.authorize.loginid; currency=data.authorize.currency||'USD'; els.pd_ccy.textContent=currency;
-        setAuthUI(true); initChart(); loadActiveSymbols(); els.posStatus.textContent='Nenhuma posição aberta.'; subscribeBalance();
+        loginId=data.authorize.loginid; currency=data.authorize.currency||'USD';
+        setAuthUI(true); initChart(); loadActiveSymbols(); subscribeBalance(); updatePosStatus();
       }
 
       if(data.msg_type==='active_symbols'){
-        const syms=(data.active_symbols||[]).map(s=>({symbol:s.symbol, display:s.display_name, market:s.market}));
-        const groups={ synthetic_index:{label:'Derived Synthetic',items:[]}, basket_index:{label:'Baskets',items:[]}, cryptocurrency:{label:'Criptomoedas',items:[]}, others:{label:'Outros',items:[]} };
-        syms.forEach(s=>{ (groups[s.market]?groups[s.market].items:groups.others.items).push(s); });
+        const list=(data.active_symbols||[]).map(s=>({
+          symbol:s.symbol, display:s.display_name, market:s.market, submarket:(s.submarket||'').toLowerCase()
+        }));
+        // Agrupamento por mercados
+        const groups = {};
+        function groupPush(key,label,item){ if(!groups[key]) groups[key]={label,items:[]}; groups[key].items.push(item); }
+
+        list.forEach(s=>{
+          const mk=s.market;
+          if(mk==='synthetic_index') groupPush('synthetic','Derived Synthetic',s);
+          else if(mk==='basket_index') groupPush('baskets','Baskets',s);
+          else if(mk==='cryptocurrency') groupPush('crypto','Criptomoedas',s);
+          else if(mk==='forex') groupPush('forex','Forex',s);
+          else if(mk==='commodities') groupPush('commodities','Commodities',s);
+          else if(mk==='stock_index' || mk==='indices'){
+            const sm=s.submarket;
+            if(/amer/i.test(sm)) groupPush('idx_us','Índices Americanos',s);
+            else if(/asia|oceania/i.test(sm)) groupPush('idx_asia','Índices Asiáticos',s);
+            else if(/euro/i.test(sm)) groupPush('idx_eu','Índices Europeus',s);
+            else groupPush('idx_others','Índices',s);
+          } else {
+            groupPush('others','Outros',s);
+          }
+        });
 
         els.symbolSelect.innerHTML='';
         Object.values(groups).forEach(g=>{
-          if(!g.items.length) return;
+          g.items.sort((a,b)=>a.display.localeCompare(b.display));
           const og=document.createElement('optgroup'); og.label=g.label;
-          g.items.sort((a,b)=>a.display.localeCompare(b.display)).forEach(s=>{ const o=document.createElement('option'); o.value=s.symbol; o.textContent=s.display; og.appendChild(o); });
+          g.items.forEach(s=>{ const o=document.createElement('option'); o.value=s.symbol; o.textContent=s.display; og.appendChild(o); });
           els.symbolSelect.appendChild(og);
         });
 
         const first=els.symbolSelect.querySelector('option');
         if(first){
-          els.symbolSelect.value=first.value; currentSymbol=first.value; els.pd_asset.textContent=first.textContent;
+          els.symbolSelect.value=first.value; currentSymbol=first.value;
           subscribeTicks(currentSymbol); loadCandles(currentSymbol,currentGranularity); checkMultipliersAvailability(currentSymbol);
         }
       }
 
+      // ticks (intrabar)
       if(data.msg_type==='tick'&&data.tick){
         const q=Number(data.tick.quote), epoch=Number(data.tick.epoch), sym=data.tick.symbol;
         if(els.tickPrice){ let s=q.toFixed(5); if(s.endsWith('00')) s=s.slice(0,-2); els.tickPrice.textContent=s; }
@@ -346,6 +348,7 @@
         }
       }
 
+      // histórico inicial
       if(data.msg_type==='candles'&&Array.isArray(data.candles)){
         const bars=data.candles.map(c=>({time:+c.epoch,open:+c.open,high:+c.high,low:+c.low,close:+c.close}));
         if(candleSeries){ candleSeries.setData(bars); liveBar=bars[bars.length-1]||null; lwChart.timeScale().fitContent(); }
@@ -359,65 +362,74 @@
 
       // proposal -> buy
       if(data.msg_type==='proposal'){
-        if(data.proposal&&data.proposal.id){
+        if(data.proposal && data.proposal.id){
           const p=data.proposal;
-          // “Custos do contrato” = Entrada; “Valor do contrato” começa igual à Entrada
-          els.pd_cost.textContent = `${lastOrder.amount.toFixed(2)} ${currency}`;
-          els.pd_value.textContent = `${lastOrder.amount.toFixed(2)} ${currency}`;
-          const id=p.id, ask=+p.ask_price;
-          send({ buy:id, price:ask });
-        }else{ els.posStatus.textContent='Falha ao receber proposta.'; }
+          const meta = (data.echo_req && data.echo_req.passthrough) ? data.echo_req.passthrough : {};
+          proposalMeta.set(p.id, meta);
+          send({ buy:p.id, price:+p.ask_price, passthrough:{...meta, proposal_id:p.id} });
+        }
       }
 
+      // buy -> criar cartão + subscrever
       if(data.msg_type==='buy'){
-        if(data.buy&&data.buy.contract_id){
-          openContractId=data.buy.contract_id;
-          els.posStatus.textContent=`Contrato #${openContractId} aberto. A acompanhar...`;
-          els.closeBtn.classList.remove('hidden');
-          subscribeOpenContract(openContractId);
+        if(data.buy && data.buy.contract_id){
+          const meta = (data.echo_req && data.echo_req.passthrough) ? data.echo_req.passthrough : {};
+          const cid = data.buy.contract_id;
+          createPositionCard(cid, meta);
+          subscribeOpenContract(cid);
+          updatePosStatus();
         }
       }
 
+      // cada contrato aberto
       if(data.msg_type==='proposal_open_contract'){
-        const poc=data.proposal_open_contract; if(!poc) return;
+        const poc=data.proposal_open_contract; if(!poc || !poc.contract_id) return;
+        const cid=poc.contract_id;
+        const pos=positions.get(cid); if(!pos) return;
 
-        // Direção + multiplier
-        if(poc.contract_type){
-          const dir=poc.contract_type.includes('UP')?'Up':'Down';
-          const mult=lastOrder.multiplier || els.multInput.value || '—';
-          els.pd_dir.textContent=`${dir} x${mult}`;
-        }
+        // entrada (buy_price) e P/L
+        if(poc.buy_price!=null){ pos.entry = Number(poc.buy_price); pos.els.entry.textContent = `${pos.entry.toFixed(2)} ${pos.meta.currency}`; }
 
-        // Entrada (buy_price) e TP/SL (dos inputs ou limit_order)
-        if(poc.buy_price!=null) els.pd_entry.textContent=`${(+poc.buy_price).toFixed(2)} ${currency}`;
+        // TP/SL fixos (mostram do input/meta se não houver na API)
+        const tp = (pos.meta.tp>0) ? pos.meta.tp : (poc.limit_order && poc.limit_order.take_profit ? Number(poc.limit_order.take_profit) : 0);
+        const sl = (pos.meta.sl>0) ? pos.meta.sl : (poc.limit_order && poc.limit_order.stop_loss ? Number(poc.limit_order.stop_loss) : 0);
+        pos.els.tp.textContent = tp>0 ? tp.toFixed(2) : '-';
+        pos.els.sl.textContent = sl>0 ? sl.toFixed(2) : '-';
 
-        const tpVal = lastOrder.tp>0 ? lastOrder.tp
-                     : (poc.limit_order && poc.limit_order.take_profit ? Number(poc.limit_order.take_profit) : 0);
-        const slVal = lastOrder.sl>0 ? lastOrder.sl
-                     : (poc.limit_order && poc.limit_order.stop_loss ? Number(poc.limit_order.stop_loss) : 0);
-        els.pd_tp.textContent = tpVal>0 ? tpVal.toFixed(2) : '-';
-        els.pd_sl.textContent = slVal>0 ? slVal.toFixed(2) : '-';
-
-        // P/L + Valor do contrato (Entrada + P/L)
+        // P/L + valor do contrato
         const pl=(poc.profit||0);
-        setPL(pl);
-        const entry = poc.buy_price!=null ? Number(poc.buy_price) : lastOrder.amount;
-        const contractVal = entry + pl;
-        els.pd_value.textContent = `${contractVal.toFixed(2)} ${currency}`;
+        pos.els.pl.textContent = `${pl.toFixed(2)} ${pos.meta.currency}`;
+        pos.els.pl.classList.toggle('pl-green', pl>0);
+        pos.els.pl.classList.toggle('pl-red', pl<0);
 
-        // Linha de preço no nível de entrada
-        if(poc.entry_tick && poc.entry_tick_time){
-          const isUp = poc.contract_type.includes('UP');
-          createEntryLine(Number(poc.entry_tick), isUp);
+        const contractVal = (pos.entry||pos.meta.amount) + pl;
+        pos.els.value.textContent = `${contractVal.toFixed(2)} ${pos.meta.currency}`;
+        pos.els.value.classList.toggle('pl-green', contractVal > (pos.entry||pos.meta.amount));
+        pos.els.value.classList.toggle('pl-red', contractVal < (pos.entry||pos.meta.amount));
+
+        // criar linha de preço na primeira atualização com tick de entrada
+        if(!pos.priceLine && poc.entry_tick){
+          const isUp = poc.contract_type && poc.contract_type.includes('UP');
+          pos.priceLine = candleSeries.createPriceLine({
+            price: Number(poc.entry_tick),
+            color: isUp ? '#22c55e' : '#ef4444',
+            lineWidth:1,
+            lineStyle:LightweightCharts.LineStyle.Solid,
+            axisLabelVisible:true,
+            title: isUp ? '▲' : '▼'
+          });
         }
 
+        // fechado
         if(poc.is_sold){
-          els.posStatus.textContent=`Contrato fechado. Resultado: ${pl.toFixed(2)} ${currency}`;
-          cleanupPosition();
+          pos.closed = true;
+          pos.els.status.textContent = `Fechado · ${pl.toFixed(2)} ${pos.meta.currency}`;
+          pos.els.closeBtn.classList.add('hidden');
+          if(pos.priceLine){ candleSeries.removePriceLine(pos.priceLine); pos.priceLine=null; }
+          if(pl>0) playCash();
+          updatePosStatus();
         }
       }
-
-      if(data.msg_type==='sell'){ /* ok */ }
 
       if(data.msg_type==='balance'){
         if(data.balance && typeof data.balance.balance!=='undefined'){
@@ -426,6 +438,7 @@
         if(data.subscription && data.subscription.id && !balanceSubId){ balanceSubId=data.subscription.id; }
       }
 
+      // multipliers por símbolo
       if(data.msg_type==='contracts_for' && data.contracts_for){
         const a=data.contracts_for.available||[];
         const types=a.flatMap(x=>x.contract_type||[]);
@@ -445,8 +458,8 @@
       }
     }
 
-    // ======== API helpers ========
-    function authorize(token,acct,cur){ currency=(cur||'USD').toUpperCase(); els.pd_ccy.textContent=currency; send({ authorize:token, passthrough:{acct} }); }
+    // ========= API helpers =========
+    function authorize(token,acct,cur){ currency=(cur||'USD').toUpperCase(); send({ authorize:token, passthrough:{acct} }); }
     function loadActiveSymbols(){ send({ active_symbols:'full' }); }
     function subscribeTicks(symbol){
       if(tickSubId){ send({ forget:tickSubId }); tickSubId=null; }
@@ -457,44 +470,111 @@
       });
     }
     function subscribeOpenContract(contract_id){
-      if(pocSubId){ send({ forget:pocSubId }); pocSubId=null; }
-      send({ proposal_open_contract:1, contract_id, subscribe:1 });
+      send({ proposal_open_contract:1, contract_id, subscribe:1, passthrough:{contract_id} });
       ws.addEventListener('message', function once(e){ const d=JSON.parse(e.data);
-        if(d.msg_type==='proposal_open_contract'&&d.subscription&&d.subscription.id){ pocSubId=d.subscription.id; ws.removeEventListener('message',once); }
+        if(d.msg_type==='proposal_open_contract'&&d.subscription&&d.subscription.id){
+          const cid = d.proposal_open_contract.contract_id;
+          const pos = positions.get(cid); if(pos) pos.subId = d.subscription.id;
+          ws.removeEventListener('message',once);
+        }
       });
     }
     function subscribeBalance(){ if(balanceSubId){ send({ forget:balanceSubId }); balanceSubId=null; } send({ balance:1, subscribe:1 }); els.refreshBalanceBtn.disabled=false; }
-    function cleanupPosition(){ openContractId=null; if(pocSubId){ send({ forget:pocSubId }); pocSubId=null; } els.closeBtn.classList.add('hidden'); setPL(0); removeEntryLine(); }
 
+    // ========= POSIÇÕES (UI) =========
+    function createPositionCard(contract_id, meta){
+      // estrutura
+      const wrap = document.createElement('div');
+      wrap.id = `pos-${contract_id}`;
+      wrap.className = 'rounded-xl border border-slate-800 p-3 space-y-2';
+
+      const top = document.createElement('div');
+      top.className = 'flex items-center justify-between';
+      const title = document.createElement('div');
+      title.className = 'text-sm';
+      title.textContent = `${meta.assetName || meta.symbol} · ${meta.direction==='up'?'Up':'Down'} x${meta.multiplier}`;
+      const status = document.createElement('div');
+      status.className = 'text-xs text-slate-400';
+      status.textContent = 'Aberto';
+      top.appendChild(title); top.appendChild(status);
+
+      const grid = document.createElement('div');
+      grid.className = 'grid grid-cols-2 gap-x-3 gap-y-1 text-sm';
+      grid.innerHTML = `
+        <div class="text-slate-400">Custos do contrato</div><div class="text-slate-200" id="v_cost">—</div>
+        <div class="text-slate-400">Valor do contrato</div><div class="text-slate-200" id="v_value">—</div>
+        <div class="text-slate-400">Entrada</div><div class="text-slate-200" id="v_entry">—</div>
+        <div class="text-slate-400">Take profit</div><div class="text-slate-200" id="v_tp">—</div>
+        <div class="text-slate-400">Stop loss</div><div class="text-slate-200" id="v_sl">—</div>
+        <div class="text-slate-400">Lucro/Prejuízo</div><div class="text-slate-200 font-semibold" id="v_pl">—</div>
+      `;
+
+      const actions = document.createElement('div');
+      actions.className = 'flex justify-end';
+      const btn = document.createElement('button');
+      btn.className = 'btn px-3 py-1 rounded-lg bg-slate-700 hover:bg-slate-600 text-xs';
+      btn.textContent = 'Fechar';
+      actions.appendChild(btn);
+
+      wrap.appendChild(top); wrap.appendChild(grid); wrap.appendChild(actions);
+      els.positionsList.prepend(wrap);
+
+      // refs
+      const refs = {
+        status,
+        cost: grid.querySelector('#v_cost'),
+        value: grid.querySelector('#v_value'),
+        entry: grid.querySelector('#v_entry'),
+        tp: grid.querySelector('#v_tp'),
+        sl: grid.querySelector('#v_sl'),
+        pl: grid.querySelector('#v_pl'),
+        closeBtn: btn
+      };
+
+      refs.cost.textContent = `${meta.amount.toFixed(2)} ${meta.currency}`;
+      refs.value.textContent = `${meta.amount.toFixed(2)} ${meta.currency}`;
+      refs.entry.textContent = `${meta.amount.toFixed(2)} ${meta.currency}`;
+      refs.tp.textContent = meta.tp>0 ? meta.tp.toFixed(2) : '-';
+      refs.sl.textContent = meta.sl>0 ? meta.sl.toFixed(2) : '-';
+      refs.pl.textContent = `0.00 ${meta.currency}`;
+
+      btn.onclick = ()=>{ send({ sell: contract_id, price: 0 }); };
+
+      positions.set(contract_id, {
+        meta,
+        els: refs,
+        subId: null,
+        entry: meta.amount,
+        priceLine: null,
+        closed: false
+      });
+    }
+
+    // ========= AÇÕES =========
     function placeMultiplier(direction){
       if(!authorized) return toast('Autorize primeiro',true);
       const symbol=els.symbolSelect.value, amount=Number(els.stakeInput.value||0), multiplier=Number(els.multInput.value||0);
       if(!symbol||!amount||!multiplier){ els.posStatus.textContent='Preencha símbolo, stake e multiplier'; return; }
 
-      const tp=Number(els.tpInput.value||0), sl=Number(els.slInput.value||0), dc=els.dcInput.value;
-      const limit_order={}; if(tp>0) limit_order.take_profit=tp; if(sl>0) limit_order.stop_loss=sl;
-
-      // guardar e preencher UI
-      lastOrder={ symbol, amount, multiplier, direction, tp, sl };
-      els.pd_asset.textContent=els.symbolSelect.selectedOptions[0]?.textContent||symbol;
-      els.pd_dir.textContent=`${direction==='up'?'Up':'Down'} x${multiplier}`;
-      els.pd_entry.textContent=`${amount.toFixed(2)} ${currency}`;
-      els.pd_tp.textContent=tp>0?tp.toFixed(2):'-';
-      els.pd_sl.textContent=sl>0?sl.toFixed(2):'-';
-      els.pd_cost.textContent=`${amount.toFixed(2)} ${currency}`;  // custo = entrada
-      els.pd_value.textContent=`${amount.toFixed(2)} ${currency}`; // inicia igual
-      setPL(0);
-      removeEntryLine();
-
-      const req={ proposal:1, amount, basis:'stake', contract_type:direction==='up'?'MULTUP':'MULTDOWN', currency, symbol, multiplier };
-      if(Object.keys(limit_order).length) req.limit_order=limit_order; if(dc) req.cancellation=dc;
+      const tp=Number(els.tpInput.value||0), sl=Number(els.slInput.value||0);
+      const meta = {
+        symbol, amount, multiplier, direction, tp, sl,
+        currency, assetName: els.symbolSelect.selectedOptions[0]?.textContent || symbol
+      };
 
       lastUserActionAt=Date.now();
       els.posStatus.textContent='Enviando proposal...';
-      send(req);
+
+      send({
+        proposal:1,
+        amount, basis:'stake',
+        contract_type: direction==='up' ? 'MULTUP' : 'MULTDOWN',
+        currency, symbol, multiplier,
+        passthrough: meta
+      });
     }
 
-    // ======== GRÁFICO ========
+    // ========= GRÁFICO =========
     function initChart(){
       if(lwChart||!els.chartWrap) return;
       lwChart=LightweightCharts.createChart(els.chartWrap,{
@@ -503,14 +583,14 @@
         grid:{ vertLines:{ color:'#1e2a46' }, horzLines:{ color:'#1e2a46' } },
         crosshair:{ mode:LightweightCharts.CrosshairMode.Magnet },
         rightPriceScale:{ borderColor:'#1e2a46' },
-        timeScale:{ borderColor:'#1e2a46', timeVisible:true, secondsVisible:false, rightOffset:3, fixRightEdge:false, fixLeftEdge:false },
+        timeScale:{ borderColor:'#1e2a46', timeVisible:true, secondsVisible:false, rightOffset:3 }
       });
       candleSeries=lwChart.addCandlestickSeries({ upColor:'#22c55e', downColor:'#ef4444', wickUpColor:'#22c55e', wickDownColor:'#ef4444', borderVisible:false });
       new ResizeObserver(()=>{ lwChart.applyOptions({}); }).observe(els.chartWrap);
     }
     function loadCandles(symbol,granularitySec){
       if(!symbol) return; currentSymbol=symbol; currentGranularity=Number(granularitySec||60);
-      liveBar=null; if(candleSeries){ candleSeries.setData([]); removeEntryLine(); }
+      liveBar=null; if(candleSeries){ candleSeries.setData([]); }
       if(ohlcSubId){ send({ forget:ohlcSubId }); ohlcSubId=null; }
       send({ ticks_history:symbol, adjust_start_time:1, count:300, end:'latest', style:'candles', granularity:currentGranularity });
       send({ ohlc:1, symbol, granularity:currentGranularity, subscribe:1 });
@@ -518,13 +598,14 @@
         if(d.msg_type==='ohlc'&&d.subscription&&d.subscription.id){ ohlcSubId=d.subscription.id; ws.removeEventListener('message',once);} }catch(err){} });
     }
 
-    // ======== MERCADO ========
+    // ========= MERCADO =========
     function checkMultipliersAvailability(symbol){ send({ contracts_for:symbol }); }
 
-    // ======== EVENTOS ========
+    // ========= EVENTOS =========
     els.loginBtn.onclick=()=>{ window.location.href=OAUTH_URL; };
     els.logoutBtn.onclick=()=>{
-      cleanupPosition();
+      // não fecha contratos; apenas limpa sessões
+      positions.clear(); els.positionsList.innerHTML=''; updatePosStatus();
       if(ws&&ws.readyState===1) ws.close();
       if(balanceSubId){ send({ forget:balanceSubId }); balanceSubId=null; }
       if(tickSubId){ send({ forget:tickSubId }); tickSubId=null; }
@@ -539,19 +620,29 @@
       setTimeout(()=>{ subscribeBalance(); },200);
     };
     els.refreshBalanceBtn.onclick=()=> send({ balance:1 });
-    els.symbolSelect.onchange=(e)=>{ const sym=e.target.value; els.pd_asset.textContent=e.target.selectedOptions[0]?.textContent||sym; subscribeTicks(sym); loadCandles(sym,currentGranularity); checkMultipliersAvailability(sym); };
+    els.symbolSelect.onchange=(e)=>{
+      const sym=e.target.value;
+      subscribeTicks(sym); loadCandles(sym,currentGranularity); checkMultipliersAvailability(sym);
+    };
     els.tfSelect.onchange=(e)=>{ loadCandles(els.symbolSelect.value, Number(e.target.value||60)); };
-    els.upBtn.onclick=()=>{ lastUserActionAt=Date.now(); placeMultiplier('up'); };
-    els.downBtn.onclick=()=>{ lastUserActionAt=Date.now(); placeMultiplier('down'); };
-    els.closeBtn.onclick=()=>{ if(!openContractId) return; lastUserActionAt=Date.now(); send({ sell:openContractId, price:0 }); };
+    els.upBtn.onclick=()=>{ placeMultiplier('up'); };
+    els.downBtn.onclick=()=>{ placeMultiplier('down'); };
+    document.getElementById('resetBtn').onclick=()=>{
+      // limpa histórico (remove cartões fechados), repõe inputs e recarrega 1º mercado
+      for(const [cid,pos] of positions){ if(pos.closed){ positions.delete(cid); const el=document.getElementById(`pos-${cid}`); if(el) el.remove(); } }
+      updatePosStatus();
+      els.stakeInput.value = 10;
+      els.tpInput.value = '';
+      els.slInput.value = '';
+      // repõe símbolo para o primeiro e recarrega
+      const first=els.symbolSelect.querySelector('option');
+      if(first){ els.symbolSelect.value = first.value; subscribeTicks(first.value); loadCandles(first.value,60); checkMultipliersAvailability(first.value); }
+      els.tfSelect.value = '60';
+    };
 
-    // ======== AUTH / INIT ========
-    function authorize(token,acct,cur){ currency=(cur||'USD').toUpperCase(); els.pd_ccy.textContent=currency; send({ authorize:token, passthrough:{acct} }); }
-    function subscribeBalance(){ if(balanceSubId){ send({ forget:balanceSubId }); balanceSubId=null; } send({ balance:1, subscribe:1 }); els.refreshBalanceBtn.disabled=false; }
-
+    // ========= BOOT =========
     function extractAndBoot(){
-      const q=new URLSearchParams(location.search); const tokens=[]; for(let i=1;i<=10;i++){ const acct=q.get(`acct${i}`),token=q.get(`token${i}`),cur=q.get(`cur${i}`); if(acct&&token){ tokens.push({account:acct.toUpperCase(),token,currency:(cur||'USD').toUpperCase()}); } }
-      if(tokens.length){ localStorage.setItem('POINT_TOKENS',JSON.stringify(tokens)); history.replaceState({},document.title,location.pathname); }
+      extractTokensFromUrl();
       const stored=getStoredTokens();
       if(stored.length){
         els.accountSelect.innerHTML=''; stored.forEach(t=>{ const o=document.createElement('option'); o.value=t.account; o.textContent=`${t.account} • ${t.currency}`; els.accountSelect.appendChild(o); });
@@ -559,8 +650,6 @@
         connectWS(); const first=stored[0]; localStorage.setItem('POINT_SELECTED',JSON.stringify(first)); authorize(first.token,first.account,first.currency);
       }else{ connectWS(); initChart(); }
     }
-    function getStoredTokens(){ try{return JSON.parse(localStorage.getItem('POINT_TOKENS')||'[]');}catch(e){return[]} }
-
     extractAndBoot();
   </script>
 </body>
