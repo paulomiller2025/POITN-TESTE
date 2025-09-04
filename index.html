@@ -142,7 +142,7 @@
                 <input id="slInput" type="number" min="1" step="1" placeholder="ex: 130" class="pill w-full px-3 py-2 rounded-xl bg-transparent text-slate-200" disabled />
               </div>
             </div>
-            <!-- Deal Cancellation: removido do UI por pedido -->
+            <!-- Deal Cancellation removido -->
           </div>
         </section>
 
@@ -166,15 +166,19 @@
     const WS_URL  = `wss://ws.derivws.com/websockets/v3?app_id=${APP_ID}`;
     const OAUTH_URL = `https://oauth.deriv.com/oauth2/authorize?app_id=${APP_ID}`;
 
+    // candidatos de multipliers (serão filtrados pelo que a API aceitar)
+    const PREFERRED_MULTS = [10,15,20,40,50,80,100,200,400,700,800,1300,1600,2500,3200];
+
     // ========= ESTADO =========
     let ws=null, authorized=false, loginId=null, currency='USD';
     let tickSubId=null, ohlcSubId=null, balanceSubId=null;
     let lwChart=null, candleSeries=null, currentSymbol=null, currentGranularity=60, liveBar=null;
 
     // VÁRIOS CONTRATOS
-    const positions = new Map(); // contract_id -> { meta, els, subId, entry, priceLine, closed }
-    const proposalMeta = new Map(); // proposal_id -> meta
+    const positions = new Map(); // contract_id -> { meta, els, subId, entry, priceLine, closed, closing }
     let lastUserActionAt = 0;
+    let lastClickedDirection = null; // 'up' | 'down'
+    let acceptsRetryGuardUntil = 0;   // evita loop
 
     // ÁUDIO (som de cash em lucro)
     let audioCtx = null;
@@ -197,7 +201,7 @@
         o2.type='square'; o2.frequency.setValueAtTime(1980, t);
         o2.frequency.exponentialRampToValueAtTime(990, t+0.25);
         o2.connect(g); o2.start(t); o2.stop(t+0.3);
-      }catch(e){ /* silenciar se o navegador bloquear */ }
+      }catch(e){ /* browser pode bloquear em 1º toque */ }
     }
 
     // ========= DOM =========
@@ -224,18 +228,29 @@
       els.loginNote.textContent = on ? 'Autorizado. Escolhe a conta e o símbolo para negociar.' : 'Clique em Conectar para iniciar o OAuth.';
       if(dis){ els.balanceInput.value=''; els.balanceInput.placeholder='—'; }
     }
+    function translateError(msg){
+      let m=String(msg||'');
+      // saldo insuficiente
+      m = m.replace(/Your account balance \(([^)]+)\) is insufficient to buy this contract \(([^)]+)\)\./i,
+                    'Saldo da sua conta ($1) é insuficiente para comprar este contrato ($2).');
+      // validação
+      m = m.replace(/Input validation failed:? ?(.+)?/i,'Validação de entrada falhou$1?'.replace('?',''));
+      // mercado fechado
+      m = m.replace(/Market is closed/i,'O mercado está fechado');
+      // genérico
+      return m;
+    }
     function toast(msg,isErr=false){
-      console[isErr?'error':'log'](msg);
       const recent=(Date.now()-lastUserActionAt)<4000;
-      if(isErr && recent){ els.posStatus.textContent = `Erro: ${msg}`; }
-      // se vier “Accepts …”, sincroniza multiplicadores
-      if(isErr && /Accepts/i.test(String(msg))){
-        const list=String(msg).split('Accepts')[1]?.replace(':','').trim();
-        if(list){
-          const values=list.split(',').map(s=>Number(s.trim())).filter(Boolean);
-          if(values.length) setMultiplierOptions(values,true);
-        }
+      const s=String(msg||'');
+      // tratar "Accepts ..." de forma silenciosa + auto-ajuste
+      if(isErr && /Accepts/i.test(s)){
+        const nums = s.split('Accepts')[1]?.replace(':','').split(',').map(x=>Number(x.trim())).filter(Boolean) || [];
+        handleAcceptsAutoRetry(nums);
+        return; // não mostra erro
       }
+      console[isErr?'error':'log'](msg);
+      if(isErr && recent){ els.posStatus.textContent = `Erro: ${translateError(s)}`; }
     }
     function setBadge(available){
       const b=els.multBadge; if(!b) return;
@@ -245,10 +260,20 @@
         ? 'px-2 py-1 rounded-lg text-xs border bg-emerald-500/10 text-emerald-300 border-emerald-500/30'
         : 'px-2 py-1 rounded-lg text-xs border bg-rose-500/10 text-rose-300 border-rose-500/30';
     }
-    function setMultiplierOptions(list,forceEnable=false){
+    function setMultiplierOptions(allowed,forceEnable=false){
+      // se API der lista, usamos ela; senão, usamos um conjunto seguro pequeno
+      let arr = Array.isArray(allowed)&&allowed.length
+        ? [...new Set(allowed.map(Number).filter(Boolean))]
+        : [10,50,100,200,400];
+      // ordenar e manter só os aceites (evita erros)
+      arr = arr.sort((a,b)=>a-b);
+
+      // mostrar preferidos, mas somente se aceites (já contidos em arr fornecido pela API)
+      const preferred = PREFERRED_MULTS.filter(v=>arr.includes(v));
+      const merged = [...new Set([...preferred, ...arr])]; // preserva ordem preferida no topo
+
       els.multInput.innerHTML='';
-      const arr=(list&&list.length?list:[10,50,100,200,400]).map(Number).filter(Boolean).sort((a,b)=>a-b);
-      arr.forEach(v=>{ const o=document.createElement('option'); o.value=String(v); o.textContent='x'+v; els.multInput.appendChild(o); });
+      merged.forEach(v=>{ const o=document.createElement('option'); o.value=String(v); o.textContent='x'+v; els.multInput.appendChild(o); });
       if(forceEnable || !els.multInput.disabled) els.multInput.disabled=false;
       if(els.multInput.options.length>0) els.multInput.selectedIndex=0;
     }
@@ -314,13 +339,14 @@
             const sm=s.submarket;
             if(/amer/i.test(sm)) groupPush('idx_us','Índices Americanos',s);
             else if(/asia|oceania/i.test(sm)) groupPush('idx_asia','Índices Asiáticos',s);
-            else if(/euro/i.test(sm)) groupPush('idx_eu','Índices Europeus',s);
+            else if(/euro|eu/i.test(sm)) groupPush('idx_eu','Índices Europeus',s);
             else groupPush('idx_others','Índices',s);
           } else {
             groupPush('others','Outros',s);
           }
         });
 
+        // desenhar select
         els.symbolSelect.innerHTML='';
         Object.values(groups).forEach(g=>{
           g.items.sort((a,b)=>a.display.localeCompare(b.display));
@@ -329,10 +355,16 @@
           els.symbolSelect.appendChild(og);
         });
 
-        const first=els.symbolSelect.querySelector('option');
-        if(first){
-          els.symbolSelect.value=first.value; currentSymbol=first.value;
-          subscribeTicks(currentSymbol); loadCandles(currentSymbol,currentGranularity); checkMultipliersAvailability(currentSymbol);
+        // === DEFAULT: Volatility 100 (1s) ===
+        let def = Array.from(els.symbolSelect.querySelectorAll('option'))
+          .find(o=>/Volatility 100 \(1s\)/i.test(o.textContent));
+        if(!def) def = els.symbolSelect.querySelector('option'); // fallback
+        if(def){
+          els.symbolSelect.value = def.value;
+          currentSymbol = def.value;
+          subscribeTicks(currentSymbol);
+          loadCandles(currentSymbol,currentGranularity);
+          checkMultipliersAvailability(currentSymbol);
         }
       }
 
@@ -365,7 +397,7 @@
         if(data.proposal && data.proposal.id){
           const p=data.proposal;
           const meta = (data.echo_req && data.echo_req.passthrough) ? data.echo_req.passthrough : {};
-          proposalMeta.set(p.id, meta);
+          // liga meta ao proposal (para o buy e cartão)
           send({ buy:p.id, price:+p.ask_price, passthrough:{...meta, proposal_id:p.id} });
         }
       }
@@ -390,24 +422,24 @@
         // entrada (buy_price) e P/L
         if(poc.buy_price!=null){ pos.entry = Number(poc.buy_price); pos.els.entry.textContent = `${pos.entry.toFixed(2)} ${pos.meta.currency}`; }
 
-        // TP/SL fixos (mostram do input/meta se não houver na API)
         const tp = (pos.meta.tp>0) ? pos.meta.tp : (poc.limit_order && poc.limit_order.take_profit ? Number(poc.limit_order.take_profit) : 0);
         const sl = (pos.meta.sl>0) ? pos.meta.sl : (poc.limit_order && poc.limit_order.stop_loss ? Number(poc.limit_order.stop_loss) : 0);
         pos.els.tp.textContent = tp>0 ? tp.toFixed(2) : '-';
         pos.els.sl.textContent = sl>0 ? sl.toFixed(2) : '-';
 
-        // P/L + valor do contrato
+        // P/L + valor do contrato + cores
         const pl=(poc.profit||0);
         pos.els.pl.textContent = `${pl.toFixed(2)} ${pos.meta.currency}`;
         pos.els.pl.classList.toggle('pl-green', pl>0);
         pos.els.pl.classList.toggle('pl-red', pl<0);
 
-        const contractVal = (pos.entry||pos.meta.amount) + pl;
+        const entry = (pos.entry||pos.meta.amount);
+        const contractVal = entry + pl;
         pos.els.value.textContent = `${contractVal.toFixed(2)} ${pos.meta.currency}`;
-        pos.els.value.classList.toggle('pl-green', contractVal > (pos.entry||pos.meta.amount));
-        pos.els.value.classList.toggle('pl-red', contractVal < (pos.entry||pos.meta.amount));
+        pos.els.value.classList.toggle('pl-green', contractVal > entry);
+        pos.els.value.classList.toggle('pl-red', contractVal < entry);
 
-        // criar linha de preço na primeira atualização com tick de entrada
+        // linha de preço na 1ª atualização com tick de entrada
         if(!pos.priceLine && poc.entry_tick){
           const isUp = poc.contract_type && poc.contract_type.includes('UP');
           pos.priceLine = candleSeries.createPriceLine({
@@ -418,6 +450,12 @@
             axisLabelVisible:true,
             title: isUp ? '▲' : '▼'
           });
+        }
+
+        // fecho automático por TP / SL
+        if(!pos.closed && !pos.closing){
+          if(tp>0 && pl >= tp){ pos.closing=true; send({ sell: cid, price: 0 }); }
+          if(sl>0 && -pl >= sl){ pos.closing=true; send({ sell: cid, price: 0 }); }
         }
 
         // fechado
@@ -453,9 +491,31 @@
             if(Array.isArray(item.multipliers)) allowed=allowed.concat(item.multipliers);
           }
         }
-        allowed=[...new Set(allowed.map(Number).filter(Boolean))].sort((x,y)=>x-y);
+        allowed=[...new Set(allowed.map(Number).filter(Boolean))].sort((x,y)=>a-b);
+        // NOTA: só exibimos os que a API aceitar (evita erros)
         setMultiplierOptions(allowed,true);
       }
+    }
+
+    // ========= handlers auxiliares =========
+    function handleAcceptsAutoRetry(allowedList){
+      const now = Date.now();
+      if(now < acceptsRetryGuardUntil) return; // evita loop
+      if(!Array.isArray(allowedList) || !allowedList.length) return;
+      // escolher o mais próximo do selecionado atual
+      const cur = Number(els.multInput.value||0);
+      let best = allowedList[0];
+      let bestDiff = Infinity;
+      allowedList.forEach(v=>{
+        const d = Math.abs(v - cur);
+        if(d < bestDiff){ best=v; bestDiff=d; }
+      });
+      // aplicar e reenviar
+      els.multInput.value = String(best);
+      acceptsRetryGuardUntil = now + 1500;
+      setTimeout(()=>{
+        if(lastClickedDirection) placeMultiplier(lastClickedDirection);
+      }, 40);
     }
 
     // ========= API helpers =========
@@ -483,7 +543,6 @@
 
     // ========= POSIÇÕES (UI) =========
     function createPositionCard(contract_id, meta){
-      // estrutura
       const wrap = document.createElement('div');
       wrap.id = `pos-${contract_id}`;
       wrap.className = 'rounded-xl border border-slate-800 p-3 space-y-2';
@@ -501,12 +560,12 @@
       const grid = document.createElement('div');
       grid.className = 'grid grid-cols-2 gap-x-3 gap-y-1 text-sm';
       grid.innerHTML = `
-        <div class="text-slate-400">Custos do contrato</div><div class="text-slate-200" id="v_cost">—</div>
-        <div class="text-slate-400">Valor do contrato</div><div class="text-slate-200" id="v_value">—</div>
-        <div class="text-slate-400">Entrada</div><div class="text-slate-200" id="v_entry">—</div>
-        <div class="text-slate-400">Take profit</div><div class="text-slate-200" id="v_tp">—</div>
-        <div class="text-slate-400">Stop loss</div><div class="text-slate-200" id="v_sl">—</div>
-        <div class="text-slate-400">Lucro/Prejuízo</div><div class="text-slate-200 font-semibold" id="v_pl">—</div>
+        <div class="text-slate-400">Custos do contrato</div><div class="text-slate-200" id="v_cost">${meta.amount.toFixed(2)} ${meta.currency}</div>
+        <div class="text-slate-400">Valor do contrato</div><div class="text-slate-200" id="v_value">${meta.amount.toFixed(2)} ${meta.currency}</div>
+        <div class="text-slate-400">Entrada</div><div class="text-slate-200" id="v_entry">${meta.amount.toFixed(2)} ${meta.currency}</div>
+        <div class="text-slate-400">Take profit</div><div class="text-slate-200" id="v_tp">${meta.tp>0?meta.tp.toFixed(2):'-'}</div>
+        <div class="text-slate-400">Stop loss</div><div class="text-slate-200" id="v_sl">${meta.sl>0?meta.sl.toFixed(2):'-'}</div>
+        <div class="text-slate-400">Lucro/Prejuízo</div><div class="text-slate-200 font-semibold" id="v_pl">0.00 ${meta.currency}</div>
       `;
 
       const actions = document.createElement('div');
@@ -519,10 +578,8 @@
       wrap.appendChild(top); wrap.appendChild(grid); wrap.appendChild(actions);
       els.positionsList.prepend(wrap);
 
-      // refs
       const refs = {
         status,
-        cost: grid.querySelector('#v_cost'),
         value: grid.querySelector('#v_value'),
         entry: grid.querySelector('#v_entry'),
         tp: grid.querySelector('#v_tp'),
@@ -530,14 +587,6 @@
         pl: grid.querySelector('#v_pl'),
         closeBtn: btn
       };
-
-      refs.cost.textContent = `${meta.amount.toFixed(2)} ${meta.currency}`;
-      refs.value.textContent = `${meta.amount.toFixed(2)} ${meta.currency}`;
-      refs.entry.textContent = `${meta.amount.toFixed(2)} ${meta.currency}`;
-      refs.tp.textContent = meta.tp>0 ? meta.tp.toFixed(2) : '-';
-      refs.sl.textContent = meta.sl>0 ? meta.sl.toFixed(2) : '-';
-      refs.pl.textContent = `0.00 ${meta.currency}`;
-
       btn.onclick = ()=>{ send({ sell: contract_id, price: 0 }); };
 
       positions.set(contract_id, {
@@ -546,7 +595,8 @@
         subId: null,
         entry: meta.amount,
         priceLine: null,
-        closed: false
+        closed: false,
+        closing: false
       });
     }
 
@@ -557,6 +607,7 @@
       if(!symbol||!amount||!multiplier){ els.posStatus.textContent='Preencha símbolo, stake e multiplier'; return; }
 
       const tp=Number(els.tpInput.value||0), sl=Number(els.slInput.value||0);
+
       const meta = {
         symbol, amount, multiplier, direction, tp, sl,
         currency, assetName: els.symbolSelect.selectedOptions[0]?.textContent || symbol
@@ -565,13 +616,20 @@
       lastUserActionAt=Date.now();
       els.posStatus.textContent='Enviando proposal...';
 
-      send({
+      const echo={ passthrough: meta };
+      const req={
         proposal:1,
         amount, basis:'stake',
         contract_type: direction==='up' ? 'MULTUP' : 'MULTDOWN',
         currency, symbol, multiplier,
-        passthrough: meta
-      });
+        ...echo
+      };
+      if(tp>0 || sl>0){
+        req.limit_order = {};
+        if(tp>0) req.limit_order.take_profit = tp;
+        if(sl>0) req.limit_order.stop_loss = sl;
+      }
+      send(req);
     }
 
     // ========= GRÁFICO =========
@@ -604,7 +662,6 @@
     // ========= EVENTOS =========
     els.loginBtn.onclick=()=>{ window.location.href=OAUTH_URL; };
     els.logoutBtn.onclick=()=>{
-      // não fecha contratos; apenas limpa sessões
       positions.clear(); els.positionsList.innerHTML=''; updatePosStatus();
       if(ws&&ws.readyState===1) ws.close();
       if(balanceSubId){ send({ forget:balanceSubId }); balanceSubId=null; }
@@ -625,16 +682,12 @@
       subscribeTicks(sym); loadCandles(sym,currentGranularity); checkMultipliersAvailability(sym);
     };
     els.tfSelect.onchange=(e)=>{ loadCandles(els.symbolSelect.value, Number(e.target.value||60)); };
-    els.upBtn.onclick=()=>{ placeMultiplier('up'); };
-    els.downBtn.onclick=()=>{ placeMultiplier('down'); };
+    els.upBtn.onclick=()=>{ lastClickedDirection='up'; placeMultiplier('up'); };
+    els.downBtn.onclick=()=>{ lastClickedDirection='down'; placeMultiplier('down'); };
     document.getElementById('resetBtn').onclick=()=>{
-      // limpa histórico (remove cartões fechados), repõe inputs e recarrega 1º mercado
       for(const [cid,pos] of positions){ if(pos.closed){ positions.delete(cid); const el=document.getElementById(`pos-${cid}`); if(el) el.remove(); } }
       updatePosStatus();
-      els.stakeInput.value = 10;
-      els.tpInput.value = '';
-      els.slInput.value = '';
-      // repõe símbolo para o primeiro e recarrega
+      els.stakeInput.value = 10; els.tpInput.value = ''; els.slInput.value = '';
       const first=els.symbolSelect.querySelector('option');
       if(first){ els.symbolSelect.value = first.value; subscribeTicks(first.value); loadCandles(first.value,60); checkMultipliersAvailability(first.value); }
       els.tfSelect.value = '60';
@@ -650,6 +703,19 @@
         connectWS(); const first=stored[0]; localStorage.setItem('POINT_SELECTED',JSON.stringify(first)); authorize(first.token,first.account,first.currency);
       }else{ connectWS(); initChart(); }
     }
+    function authorize(token,acct,cur){ currency=(cur||'USD').toUpperCase(); send({ authorize:token, passthrough:{acct} }); }
+    function subscribeOpenContract(contract_id){
+      send({ proposal_open_contract:1, contract_id, subscribe:1, passthrough:{contract_id} });
+      ws.addEventListener('message', function once(e){ const d=JSON.parse(e.data);
+        if(d.msg_type==='proposal_open_contract'&&d.subscription&&d.subscription.id){
+          const cid = d.proposal_open_contract.contract_id;
+          const pos = positions.get(cid); if(pos) pos.subId = d.subscription.id;
+          ws.removeEventListener('message',once);
+        }
+      });
+    }
+    function subscribeBalance(){ if(balanceSubId){ send({ forget:balanceSubId }); balanceSubId=null; } send({ balance:1, subscribe:1 }); els.refreshBalanceBtn.disabled=false; }
+
     extractAndBoot();
   </script>
 </body>
