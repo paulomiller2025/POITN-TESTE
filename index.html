@@ -19,7 +19,9 @@
     @media (max-width:1024px){ .layout{ grid-template-columns:1fr } }
     select:focus,select:active{ color:#000 !important } select option{ color:#000 }
     #chartWrap{ height:480px; transition:height .2s ease } @media (max-width:1024px){ #chartWrap{ height:420px } }
-    .pl-green{ color:#22c55e } .pl-red{ color:#ef4444 }
+    /* Cores de P/L e Valor do contrato com prioridade */
+    .pl-green{ color:#22c55e !important }
+    .pl-red{ color:#ef4444 !important }
   </style>
 </head>
 <body>
@@ -67,7 +69,7 @@
 
     <!-- LAYOUT -->
     <div class="layout">
-      <!-- ESQUERDA: POSIÇÕES (múltiplas) -->
+      <!-- ESQUERDA: POSIÇÕES -->
       <section class="card rounded-2xl p-4">
         <div class="flex items-center justify-between mb-3">
           <div class="text-xs uppercase tracking-wide text-slate-400">Posição</div>
@@ -142,7 +144,6 @@
                 <input id="slInput" type="number" min="1" step="1" placeholder="ex: 130" class="pill w-full px-3 py-2 rounded-xl bg-transparent text-slate-200" disabled />
               </div>
             </div>
-            <!-- Deal Cancellation removido -->
           </div>
         </section>
 
@@ -166,43 +167,32 @@
     const WS_URL  = `wss://ws.derivws.com/websockets/v3?app_id=${APP_ID}`;
     const OAUTH_URL = `https://oauth.deriv.com/oauth2/authorize?app_id=${APP_ID}`;
 
-    // candidatos de multipliers (serão filtrados pelo que a API aceitar)
-    const PREFERRED_MULTS = [10,15,20,40,50,80,100,200,400,700,800,1300,1600,2500,3200];
+    // TODOS os multiplicadores visíveis no seletor
+    const ALL_MULTS = [10,15,20,40,50,80,100,150,200,250,300,350,400,450,500,700,800,1000,1300,1500,1600,2000,2500,3200];
+    const DEFAULT_SYMBOL_REGEX = /Volatility 100 \(1s\)/i;
 
     // ========= ESTADO =========
     let ws=null, authorized=false, loginId=null, currency='USD';
     let tickSubId=null, ohlcSubId=null, balanceSubId=null;
     let lwChart=null, candleSeries=null, currentSymbol=null, currentGranularity=60, liveBar=null;
 
-    // VÁRIOS CONTRATOS
-    const positions = new Map(); // contract_id -> { meta, els, subId, entry, priceLine, closed, closing }
-    let lastUserActionAt = 0;
-    let lastClickedDirection = null; // 'up' | 'down'
-    let acceptsRetryGuardUntil = 0;   // evita loop
+    const positions = new Map();
+    const allowedBySymbol = new Map(); // symbol -> [allowed multipliers]
+    let currentAllowedMultipliers = [];
 
-    // ÁUDIO (som de cash em lucro)
+    // ÁUDIO (cash em lucro)
     let audioCtx = null;
-    function playCash(){
-      try{
-        if(!audioCtx) audioCtx = new (window.AudioContext||window.webkitAudioContext)();
-        const t = audioCtx.currentTime + 0.01;
-        const g = audioCtx.createGain();
-        g.gain.setValueAtTime(0.0001, t);
-        g.gain.exponentialRampToValueAtTime(0.25, t+0.02);
-        g.gain.exponentialRampToValueAtTime(0.0001, t+0.35);
-        g.connect(audioCtx.destination);
-
-        const o1 = audioCtx.createOscillator();
-        o1.type='triangle'; o1.frequency.setValueAtTime(1320, t);
-        o1.frequency.exponentialRampToValueAtTime(880, t+0.3);
-        o1.connect(g); o1.start(t); o1.stop(t+0.35);
-
-        const o2 = audioCtx.createOscillator();
-        o2.type='square'; o2.frequency.setValueAtTime(1980, t);
-        o2.frequency.exponentialRampToValueAtTime(990, t+0.25);
-        o2.connect(g); o2.start(t); o2.stop(t+0.3);
-      }catch(e){ /* browser pode bloquear em 1º toque */ }
-    }
+    function playCash(){ try{
+      if(!audioCtx) audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+      const t = audioCtx.currentTime + 0.01;
+      const g = audioCtx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.25, t+0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t+0.35);
+      g.connect(audioCtx.destination);
+      const o1 = audioCtx.createOscillator(); o1.type='triangle'; o1.frequency.setValueAtTime(1320, t); o1.frequency.exponentialRampToValueAtTime(880, t+0.3); o1.connect(g); o1.start(t); o1.stop(t+0.35);
+      const o2 = audioCtx.createOscillator(); o2.type='square';   o2.frequency.setValueAtTime(1980, t); o2.frequency.exponentialRampToValueAtTime(990, t+0.25); o2.connect(g); o2.start(t); o2.stop(t+0.3);
+    }catch(e){} }
 
     // ========= DOM =========
     const els = {
@@ -230,27 +220,32 @@
     }
     function translateError(msg){
       let m=String(msg||'');
-      // saldo insuficiente
-      m = m.replace(/Your account balance \(([^)]+)\) is insufficient to buy this contract \(([^)]+)\)\./i,
-                    'Saldo da sua conta ($1) é insuficiente para comprar este contrato ($2).');
-      // validação
-      m = m.replace(/Input validation failed:? ?(.+)?/i,'Validação de entrada falhou$1?'.replace('?',''));
-      // mercado fechado
+      m = m.replace(/Your account balance \(([^)]+)\) is insufficient to buy this contract \(([^)]+)\)\./i, 'Saldo da sua conta ($1) é insuficiente para comprar este contrato ($2).');
+      m = m.replace(/Input validation failed:? ?(.+)?/i,'Validação de entrada falhou.');
       m = m.replace(/Market is closed/i,'O mercado está fechado');
-      // genérico
+      m = m.replace(/Insufficient balance/i,'Saldo insuficiente');
+      m = m.replace(/Unrecognised request/i,'Pedido não reconhecido');
+      m = m.replace(/Multiplier is not in acceptable range\. Accepts (.+)$/i,'O multiplicador selecionado não é aceite. Aceites: $1');
       return m;
     }
     function toast(msg,isErr=false){
-      const recent=(Date.now()-lastUserActionAt)<4000;
       const s=String(msg||'');
-      // tratar "Accepts ..." de forma silenciosa + auto-ajuste
+      // Quando a API devolve "Accepts: ...", apenas informamos (não auto-ajustamos)
       if(isErr && /Accepts/i.test(s)){
-        const nums = s.split('Accepts')[1]?.replace(':','').split(',').map(x=>Number(x.trim())).filter(Boolean) || [];
-        handleAcceptsAutoRetry(nums);
-        return; // não mostra erro
+        const raw = s.split('Accepts')[1]?.replace(':','').trim() || '';
+        const values = raw.split(',').map(x=>Number(x.trim())).filter(Number.isFinite).sort((a,b)=>a-b);
+        if(values.length){
+          allowedBySymbol.set(currentSymbol, values.slice());
+          currentAllowedMultipliers = values.slice();
+          const list = values.map(v=>'x'+v).join(', ');
+          els.posStatus.textContent = `Erro: O multiplicador selecionado não é suportado para este mercado. Suportados: ${list}.`;
+        } else {
+          els.posStatus.textContent = `Erro: ${translateError(s)}`;
+        }
+        return;
       }
       console[isErr?'error':'log'](msg);
-      if(isErr && recent){ els.posStatus.textContent = `Erro: ${translateError(s)}`; }
+      if(isErr){ els.posStatus.textContent = `Erro: ${translateError(s)}`; }
     }
     function setBadge(available){
       const b=els.multBadge; if(!b) return;
@@ -260,29 +255,31 @@
         ? 'px-2 py-1 rounded-lg text-xs border bg-emerald-500/10 text-emerald-300 border-emerald-500/30'
         : 'px-2 py-1 rounded-lg text-xs border bg-rose-500/10 text-rose-300 border-rose-500/30';
     }
-    function setMultiplierOptions(allowed,forceEnable=false){
-      // se API der lista, usamos ela; senão, usamos um conjunto seguro pequeno
-      let arr = Array.isArray(allowed)&&allowed.length
-        ? [...new Set(allowed.map(Number).filter(Boolean))]
-        : [10,50,100,200,400];
-      // ordenar e manter só os aceites (evita erros)
-      arr = arr.sort((a,b)=>a-b);
 
-      // mostrar preferidos, mas somente se aceites (já contidos em arr fornecido pela API)
-      const preferred = PREFERRED_MULTS.filter(v=>arr.includes(v));
-      const merged = [...new Set([...preferred, ...arr])]; // preserva ordem preferida no topo
-
+    // Renderiza TODOS os multiplicadores no select (sempre)
+    function renderAllMultipliers(){
       els.multInput.innerHTML='';
-      merged.forEach(v=>{ const o=document.createElement('option'); o.value=String(v); o.textContent='x'+v; els.multInput.appendChild(o); });
-      if(forceEnable || !els.multInput.disabled) els.multInput.disabled=false;
-      if(els.multInput.options.length>0) els.multInput.selectedIndex=0;
+      ALL_MULTS.forEach(v=>{
+        const o=document.createElement('option');
+        o.value=String(v); o.textContent='x'+v;
+        els.multInput.appendChild(o);
+      });
+      els.multInput.disabled=false;
     }
+
     function updatePosStatus(){
       const openCount = Array.from(positions.values()).filter(p=>!p.closed).length;
       els.posStatus.textContent = openCount ? `${openCount} posição(ões) aberta(s)` : 'Nenhuma posição aberta.';
     }
 
-    // ========= OAUTH / storage =========
+    function selectDefaultSymbol(){
+      const all = Array.from(els.symbolSelect.querySelectorAll('option'));
+      let def = all.find(o=>DEFAULT_SYMBOL_REGEX.test(o.textContent||'')) || all[0];
+      if(def){ els.symbolSelect.value = def.value; return def.value; }
+      return null;
+    }
+
+    // ========= OAUTH =========
     function extractTokensFromUrl(){
       const q=new URLSearchParams(location.search); const tokens=[];
       for(let i=1;i<=10;i++){ const acct=q.get(`acct${i}`),token=q.get(`token${i}`),cur=q.get(`cur${i}`); if(acct&&token){ tokens.push({account:acct.toUpperCase(),token,currency:(cur||'USD').toUpperCase()}); } }
@@ -318,6 +315,7 @@
       if(data.msg_type==='authorize'){
         loginId=data.authorize.loginid; currency=data.authorize.currency||'USD';
         setAuthUI(true); initChart(); loadActiveSymbols(); subscribeBalance(); updatePosStatus();
+        renderAllMultipliers(); // habilita seletor com TODOS os multiplicadores
       }
 
       if(data.msg_type==='active_symbols'){
@@ -341,9 +339,7 @@
             else if(/asia|oceania/i.test(sm)) groupPush('idx_asia','Índices Asiáticos',s);
             else if(/euro|eu/i.test(sm)) groupPush('idx_eu','Índices Europeus',s);
             else groupPush('idx_others','Índices',s);
-          } else {
-            groupPush('others','Outros',s);
-          }
+          } else groupPush('others','Outros',s);
         });
 
         // desenhar select
@@ -355,16 +351,13 @@
           els.symbolSelect.appendChild(og);
         });
 
-        // === DEFAULT: Volatility 100 (1s) ===
-        let def = Array.from(els.symbolSelect.querySelectorAll('option'))
-          .find(o=>/Volatility 100 \(1s\)/i.test(o.textContent));
-        if(!def) def = els.symbolSelect.querySelector('option'); // fallback
-        if(def){
-          els.symbolSelect.value = def.value;
-          currentSymbol = def.value;
+        // DEFAULT: Volatility 100 (1s)
+        const chosen = selectDefaultSymbol();
+        if(chosen){
+          currentSymbol = chosen;
           subscribeTicks(currentSymbol);
           loadCandles(currentSymbol,currentGranularity);
-          checkMultipliersAvailability(currentSymbol);
+          checkMultipliersAvailability(currentSymbol); // preenche allowed
         }
       }
 
@@ -397,7 +390,6 @@
         if(data.proposal && data.proposal.id){
           const p=data.proposal;
           const meta = (data.echo_req && data.echo_req.passthrough) ? data.echo_req.passthrough : {};
-          // liga meta ao proposal (para o buy e cartão)
           send({ buy:p.id, price:+p.ask_price, passthrough:{...meta, proposal_id:p.id} });
         }
       }
@@ -419,7 +411,6 @@
         const cid=poc.contract_id;
         const pos=positions.get(cid); if(!pos) return;
 
-        // entrada (buy_price) e P/L
         if(poc.buy_price!=null){ pos.entry = Number(poc.buy_price); pos.els.entry.textContent = `${pos.entry.toFixed(2)} ${pos.meta.currency}`; }
 
         const tp = (pos.meta.tp>0) ? pos.meta.tp : (poc.limit_order && poc.limit_order.take_profit ? Number(poc.limit_order.take_profit) : 0);
@@ -427,28 +418,27 @@
         pos.els.tp.textContent = tp>0 ? tp.toFixed(2) : '-';
         pos.els.sl.textContent = sl>0 ? sl.toFixed(2) : '-';
 
-        // P/L + valor do contrato + cores
+        // P/L + valor do contrato (com cores)
         const pl=(poc.profit||0);
+        pos.els.pl.classList.remove('pl-green','pl-red');
         pos.els.pl.textContent = `${pl.toFixed(2)} ${pos.meta.currency}`;
-        pos.els.pl.classList.toggle('pl-green', pl>0);
-        pos.els.pl.classList.toggle('pl-red', pl<0);
+        if(pl>0) pos.els.pl.classList.add('pl-green');
+        else if(pl<0) pos.els.pl.classList.add('pl-red');
 
         const entry = (pos.entry||pos.meta.amount);
         const contractVal = entry + pl;
+        pos.els.value.classList.remove('pl-green','pl-red');
         pos.els.value.textContent = `${contractVal.toFixed(2)} ${pos.meta.currency}`;
-        pos.els.value.classList.toggle('pl-green', contractVal > entry);
-        pos.els.value.classList.toggle('pl-red', contractVal < entry);
+        if(contractVal>entry) pos.els.value.classList.add('pl-green');
+        else if(contractVal<entry) pos.els.value.classList.add('pl-red');
 
-        // linha de preço na 1ª atualização com tick de entrada
         if(!pos.priceLine && poc.entry_tick){
           const isUp = poc.contract_type && poc.contract_type.includes('UP');
           pos.priceLine = candleSeries.createPriceLine({
             price: Number(poc.entry_tick),
             color: isUp ? '#22c55e' : '#ef4444',
-            lineWidth:1,
-            lineStyle:LightweightCharts.LineStyle.Solid,
-            axisLabelVisible:true,
-            title: isUp ? '▲' : '▼'
+            lineWidth:1, lineStyle:LightweightCharts.LineStyle.Solid,
+            axisLabelVisible:true, title: isUp ? '▲' : '▼'
           });
         }
 
@@ -458,7 +448,6 @@
           if(sl>0 && -pl >= sl){ pos.closing=true; send({ sell: cid, price: 0 }); }
         }
 
-        // fechado
         if(poc.is_sold){
           pos.closed = true;
           pos.els.status.textContent = `Fechado · ${pl.toFixed(2)} ${pos.meta.currency}`;
@@ -476,7 +465,7 @@
         if(data.subscription && data.subscription.id && !balanceSubId){ balanceSubId=data.subscription.id; }
       }
 
-      // multipliers por símbolo
+      // multipliers por símbolo (lista suportada REAL — para validação)
       if(data.msg_type==='contracts_for' && data.contracts_for){
         const a=data.contracts_for.available||[];
         const types=a.flatMap(x=>x.contract_type||[]);
@@ -491,34 +480,13 @@
             if(Array.isArray(item.multipliers)) allowed=allowed.concat(item.multipliers);
           }
         }
-        allowed=[...new Set(allowed.map(Number).filter(Boolean))].sort((x,y)=>a-b);
-        // NOTA: só exibimos os que a API aceitar (evita erros)
-        setMultiplierOptions(allowed,true);
+        allowed=[...new Set(allowed.map(Number).filter(Number.isFinite))].sort((x,y)=>x-y);
+        allowedBySymbol.set((data.echo_req && data.echo_req.contracts_for) || currentSymbol, allowed);
+        if((data.echo_req && data.echo_req.contracts_for) === currentSymbol) currentAllowedMultipliers = allowed.slice();
       }
     }
 
-    // ========= handlers auxiliares =========
-    function handleAcceptsAutoRetry(allowedList){
-      const now = Date.now();
-      if(now < acceptsRetryGuardUntil) return; // evita loop
-      if(!Array.isArray(allowedList) || !allowedList.length) return;
-      // escolher o mais próximo do selecionado atual
-      const cur = Number(els.multInput.value||0);
-      let best = allowedList[0];
-      let bestDiff = Infinity;
-      allowedList.forEach(v=>{
-        const d = Math.abs(v - cur);
-        if(d < bestDiff){ best=v; bestDiff=d; }
-      });
-      // aplicar e reenviar
-      els.multInput.value = String(best);
-      acceptsRetryGuardUntil = now + 1500;
-      setTimeout(()=>{
-        if(lastClickedDirection) placeMultiplier(lastClickedDirection);
-      }, 40);
-    }
-
-    // ========= API helpers =========
+    // ========= API =========
     function authorize(token,acct,cur){ currency=(cur||'USD').toUpperCase(); send({ authorize:token, passthrough:{acct} }); }
     function loadActiveSymbols(){ send({ active_symbols:'full' }); }
     function subscribeTicks(symbol){
@@ -540,6 +508,9 @@
       });
     }
     function subscribeBalance(){ if(balanceSubId){ send({ forget:balanceSubId }); balanceSubId=null; } send({ balance:1, subscribe:1 }); els.refreshBalanceBtn.disabled=false; }
+
+    // ========= MULTIPLIERS (consulta) =========
+    function checkMultipliersAvailability(symbol){ send({ contracts_for:symbol, currency }); }
 
     // ========= POSIÇÕES (UI) =========
     function createPositionCard(contract_id, meta){
@@ -590,40 +561,32 @@
       btn.onclick = ()=>{ send({ sell: contract_id, price: 0 }); };
 
       positions.set(contract_id, {
-        meta,
-        els: refs,
-        subId: null,
-        entry: meta.amount,
-        priceLine: null,
-        closed: false,
-        closing: false
+        meta, els: refs, subId: null, entry: meta.amount, priceLine: null, closed: false, closing: false
       });
     }
 
     // ========= AÇÕES =========
     function placeMultiplier(direction){
-      if(!authorized) return toast('Autorize primeiro',true);
-      const symbol=els.symbolSelect.value, amount=Number(els.stakeInput.value||0), multiplier=Number(els.multInput.value||0);
+      if(!authorized) return toast('Não autorizado',true);
+      const symbol=els.symbolSelect.value;
+      const amount=Number(els.stakeInput.value||0);
+      const multiplier=Number(els.multInput.value||0);
       if(!symbol||!amount||!multiplier){ els.posStatus.textContent='Preencha símbolo, stake e multiplier'; return; }
 
+      // validação: se houver lista suportada, impedir multiplicador inválido e avisar
+      const allowed = allowedBySymbol.get(symbol) || currentAllowedMultipliers || [];
+      if(Array.isArray(allowed) && allowed.length && !allowed.includes(multiplier)){
+        const list = allowed.map(v=>'x'+v).join(', ');
+        els.posStatus.textContent = `O multiplicador x${multiplier} não é suportado para este mercado. Suportados: ${list}.`;
+        return;
+      }
+
       const tp=Number(els.tpInput.value||0), sl=Number(els.slInput.value||0);
+      const meta = { symbol, amount, multiplier, direction, tp, sl, currency, assetName: els.symbolSelect.selectedOptions[0]?.textContent || symbol };
 
-      const meta = {
-        symbol, amount, multiplier, direction, tp, sl,
-        currency, assetName: els.symbolSelect.selectedOptions[0]?.textContent || symbol
-      };
-
-      lastUserActionAt=Date.now();
       els.posStatus.textContent='Enviando proposal...';
 
-      const echo={ passthrough: meta };
-      const req={
-        proposal:1,
-        amount, basis:'stake',
-        contract_type: direction==='up' ? 'MULTUP' : 'MULTDOWN',
-        currency, symbol, multiplier,
-        ...echo
-      };
+      const req={ proposal:1, amount, basis:'stake', contract_type: direction==='up' ? 'MULTUP' : 'MULTDOWN', currency, symbol, multiplier, passthrough: meta };
       if(tp>0 || sl>0){
         req.limit_order = {};
         if(tp>0) req.limit_order.take_profit = tp;
@@ -656,9 +619,6 @@
         if(d.msg_type==='ohlc'&&d.subscription&&d.subscription.id){ ohlcSubId=d.subscription.id; ws.removeEventListener('message',once);} }catch(err){} });
     }
 
-    // ========= MERCADO =========
-    function checkMultipliersAvailability(symbol){ send({ contracts_for:symbol }); }
-
     // ========= EVENTOS =========
     els.loginBtn.onclick=()=>{ window.location.href=OAUTH_URL; };
     els.logoutBtn.onclick=()=>{
@@ -679,18 +639,25 @@
     els.refreshBalanceBtn.onclick=()=> send({ balance:1 });
     els.symbolSelect.onchange=(e)=>{
       const sym=e.target.value;
-      subscribeTicks(sym); loadCandles(sym,currentGranularity); checkMultipliersAvailability(sym);
+      subscribeTicks(sym); loadCandles(sym,currentGranularity);
+      checkMultipliersAvailability(sym); // atualiza lista suportada para validação
+      renderAllMultipliers();            // mantém TODOS visíveis
     };
     els.tfSelect.onchange=(e)=>{ loadCandles(els.symbolSelect.value, Number(e.target.value||60)); };
-    els.upBtn.onclick=()=>{ lastClickedDirection='up'; placeMultiplier('up'); };
-    els.downBtn.onclick=()=>{ lastClickedDirection='down'; placeMultiplier('down'); };
+    els.upBtn.onclick=()=>{ placeMultiplier('up'); };
+    els.downBtn.onclick=()=>{ placeMultiplier('down'); };
     document.getElementById('resetBtn').onclick=()=>{
       for(const [cid,pos] of positions){ if(pos.closed){ positions.delete(cid); const el=document.getElementById(`pos-${cid}`); if(el) el.remove(); } }
       updatePosStatus();
       els.stakeInput.value = 10; els.tpInput.value = ''; els.slInput.value = '';
-      const first=els.symbolSelect.querySelector('option');
-      if(first){ els.symbolSelect.value = first.value; subscribeTicks(first.value); loadCandles(first.value,60); checkMultipliersAvailability(first.value); }
+      const chosen = selectDefaultSymbol();
+      if(chosen){
+        els.symbolSelect.value = chosen;
+        subscribeTicks(chosen); loadCandles(chosen,60);
+        checkMultipliersAvailability(chosen);
+      }
       els.tfSelect.value = '60';
+      renderAllMultipliers();
     };
 
     // ========= BOOT =========
@@ -703,6 +670,8 @@
         connectWS(); const first=stored[0]; localStorage.setItem('POINT_SELECTED',JSON.stringify(first)); authorize(first.token,first.account,first.currency);
       }else{ connectWS(); initChart(); }
     }
+
+    // ========= API wrappers =========
     function authorize(token,acct,cur){ currency=(cur||'USD').toUpperCase(); send({ authorize:token, passthrough:{acct} }); }
     function subscribeOpenContract(contract_id){
       send({ proposal_open_contract:1, contract_id, subscribe:1, passthrough:{contract_id} });
@@ -715,6 +684,7 @@
       });
     }
     function subscribeBalance(){ if(balanceSubId){ send({ forget:balanceSubId }); balanceSubId=null; } send({ balance:1, subscribe:1 }); els.refreshBalanceBtn.disabled=false; }
+    function checkMultipliersAvailability(symbol){ send({ contracts_for:symbol, currency }); }
 
     extractAndBoot();
   </script>
