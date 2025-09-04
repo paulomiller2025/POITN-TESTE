@@ -166,8 +166,11 @@
     const WS_URL  = `wss://ws.derivws.com/websockets/v3?app_id=${APP_ID}`;
     const OAUTH_URL = `https://oauth.deriv.com/oauth2/authorize?app_id=${APP_ID}`;
 
-    // candidatos de multipliers (serão filtrados pelo que a API aceitar)
-    const PREFERRED_MULTS = [10,15,20,40,50,80,100,200,400,700,800,1300,1600,2500,3200];
+    // candidato de multipliers (mostramos só os aceites pela API para o símbolo)
+    const PREFERRED_MULTS = [10,15,20,40,50,80,100,200,250,350,400,450,500,700,800,1300,1600,2500,3200];
+
+    // símbolo padrão desejado
+    const DEFAULT_SYMBOL_REGEX = /Volatility 100 \(1s\)/i;
 
     // ========= ESTADO =========
     let ws=null, authorized=false, loginId=null, currency='USD';
@@ -177,8 +180,9 @@
     // VÁRIOS CONTRATOS
     const positions = new Map(); // contract_id -> { meta, els, subId, entry, priceLine, closed, closing }
     let lastUserActionAt = 0;
-    let lastClickedDirection = null; // 'up' | 'down'
-    let acceptsRetryGuardUntil = 0;   // evita loop
+    let lastClickedDirection = null;
+    let acceptsRetryGuardUntil = 0;
+    let currentAllowedMultipliers = []; // vindo de contracts_for
 
     // ÁUDIO (som de cash em lucro)
     let audioCtx = null;
@@ -201,7 +205,7 @@
         o2.type='square'; o2.frequency.setValueAtTime(1980, t);
         o2.frequency.exponentialRampToValueAtTime(990, t+0.25);
         o2.connect(g); o2.start(t); o2.stop(t+0.3);
-      }catch(e){ /* browser pode bloquear em 1º toque */ }
+      }catch(e){ /* ok */ }
     }
 
     // ========= DOM =========
@@ -230,24 +234,21 @@
     }
     function translateError(msg){
       let m=String(msg||'');
-      // saldo insuficiente
       m = m.replace(/Your account balance \(([^)]+)\) is insufficient to buy this contract \(([^)]+)\)\./i,
                     'Saldo da sua conta ($1) é insuficiente para comprar este contrato ($2).');
-      // validação
-      m = m.replace(/Input validation failed:? ?(.+)?/i,'Validação de entrada falhou$1?'.replace('?',''));
-      // mercado fechado
+      m = m.replace(/Input validation failed:? ?(.+)?/i,'Validação de entrada falhou.');
       m = m.replace(/Market is closed/i,'O mercado está fechado');
-      // genérico
+      m = m.replace(/Insufficient balance/i,'Saldo insuficiente');
+      m = m.replace(/Not authorized/i,'Não autorizado');
       return m;
     }
     function toast(msg,isErr=false){
       const recent=(Date.now()-lastUserActionAt)<4000;
       const s=String(msg||'');
-      // tratar "Accepts ..." de forma silenciosa + auto-ajuste
       if(isErr && /Accepts/i.test(s)){
         const nums = s.split('Accepts')[1]?.replace(':','').split(',').map(x=>Number(x.trim())).filter(Boolean) || [];
         handleAcceptsAutoRetry(nums);
-        return; // não mostra erro
+        return;
       }
       console[isErr?'error':'log'](msg);
       if(isErr && recent){ els.posStatus.textContent = `Erro: ${translateError(s)}`; }
@@ -260,26 +261,32 @@
         ? 'px-2 py-1 rounded-lg text-xs border bg-emerald-500/10 text-emerald-300 border-emerald-500/30'
         : 'px-2 py-1 rounded-lg text-xs border bg-rose-500/10 text-rose-300 border-rose-500/30';
     }
+    function orderByPreference(allowed){
+      const set = new Set(allowed);
+      const top = PREFERRED_MULTS.filter(v=>set.has(v));
+      const rest = allowed.filter(v=>!top.includes(v));
+      return [...top, ...rest];
+    }
     function setMultiplierOptions(allowed,forceEnable=false){
-      // se API der lista, usamos ela; senão, usamos um conjunto seguro pequeno
-      let arr = Array.isArray(allowed)&&allowed.length
-        ? [...new Set(allowed.map(Number).filter(Boolean))]
+      const arr = Array.isArray(allowed)&&allowed.length
+        ? [...new Set(allowed.map(Number).filter(v=>Number.isFinite(v)))].sort((x,y)=>x-y)
         : [10,50,100,200,400];
-      // ordenar e manter só os aceites (evita erros)
-      arr = arr.sort((a,b)=>a-b);
-
-      // mostrar preferidos, mas somente se aceites (já contidos em arr fornecido pela API)
-      const preferred = PREFERRED_MULTS.filter(v=>arr.includes(v));
-      const merged = [...new Set([...preferred, ...arr])]; // preserva ordem preferida no topo
-
+      currentAllowedMultipliers = arr.slice();
+      const ordered = orderByPreference(arr);
       els.multInput.innerHTML='';
-      merged.forEach(v=>{ const o=document.createElement('option'); o.value=String(v); o.textContent='x'+v; els.multInput.appendChild(o); });
+      ordered.forEach(v=>{ const o=document.createElement('option'); o.value=String(v); o.textContent='x'+v; els.multInput.appendChild(o); });
       if(forceEnable || !els.multInput.disabled) els.multInput.disabled=false;
       if(els.multInput.options.length>0) els.multInput.selectedIndex=0;
     }
     function updatePosStatus(){
       const openCount = Array.from(positions.values()).filter(p=>!p.closed).length;
       els.posStatus.textContent = openCount ? `${openCount} posição(ões) aberta(s)` : 'Nenhuma posição aberta.';
+    }
+    function selectDefaultSymbol(){
+      const all = Array.from(els.symbolSelect.querySelectorAll('option'));
+      let def = all.find(o=>DEFAULT_SYMBOL_REGEX.test(o.textContent||'')) || all[0];
+      if(def){ els.symbolSelect.value = def.value; return def.value; }
+      return null;
     }
 
     // ========= OAUTH / storage =========
@@ -324,7 +331,7 @@
         const list=(data.active_symbols||[]).map(s=>({
           symbol:s.symbol, display:s.display_name, market:s.market, submarket:(s.submarket||'').toLowerCase()
         }));
-        // Agrupamento por mercados
+        // Agrupar
         const groups = {};
         function groupPush(key,label,item){ if(!groups[key]) groups[key]={label,items:[]}; groups[key].items.push(item); }
 
@@ -346,7 +353,7 @@
           }
         });
 
-        // desenhar select
+        // Render
         els.symbolSelect.innerHTML='';
         Object.values(groups).forEach(g=>{
           g.items.sort((a,b)=>a.display.localeCompare(b.display));
@@ -355,13 +362,10 @@
           els.symbolSelect.appendChild(og);
         });
 
-        // === DEFAULT: Volatility 100 (1s) ===
-        let def = Array.from(els.symbolSelect.querySelectorAll('option'))
-          .find(o=>/Volatility 100 \(1s\)/i.test(o.textContent));
-        if(!def) def = els.symbolSelect.querySelector('option'); // fallback
-        if(def){
-          els.symbolSelect.value = def.value;
-          currentSymbol = def.value;
+        // DEFAULT: Volatility 100 (1s)
+        const chosen = selectDefaultSymbol();
+        if(chosen){
+          currentSymbol = chosen;
           subscribeTicks(currentSymbol);
           loadCandles(currentSymbol,currentGranularity);
           checkMultipliersAvailability(currentSymbol);
@@ -397,7 +401,6 @@
         if(data.proposal && data.proposal.id){
           const p=data.proposal;
           const meta = (data.echo_req && data.echo_req.passthrough) ? data.echo_req.passthrough : {};
-          // liga meta ao proposal (para o buy e cartão)
           send({ buy:p.id, price:+p.ask_price, passthrough:{...meta, proposal_id:p.id} });
         }
       }
@@ -419,7 +422,7 @@
         const cid=poc.contract_id;
         const pos=positions.get(cid); if(!pos) return;
 
-        // entrada (buy_price) e P/L
+        // entrada e P/L
         if(poc.buy_price!=null){ pos.entry = Number(poc.buy_price); pos.els.entry.textContent = `${pos.entry.toFixed(2)} ${pos.meta.currency}`; }
 
         const tp = (pos.meta.tp>0) ? pos.meta.tp : (poc.limit_order && poc.limit_order.take_profit ? Number(poc.limit_order.take_profit) : 0);
@@ -427,7 +430,6 @@
         pos.els.tp.textContent = tp>0 ? tp.toFixed(2) : '-';
         pos.els.sl.textContent = sl>0 ? sl.toFixed(2) : '-';
 
-        // P/L + valor do contrato + cores
         const pl=(poc.profit||0);
         pos.els.pl.textContent = `${pl.toFixed(2)} ${pos.meta.currency}`;
         pos.els.pl.classList.toggle('pl-green', pl>0);
@@ -491,31 +493,32 @@
             if(Array.isArray(item.multipliers)) allowed=allowed.concat(item.multipliers);
           }
         }
-        allowed=[...new Set(allowed.map(Number).filter(Boolean))].sort((x,y)=>a-b);
-        // NOTA: só exibimos os que a API aceitar (evita erros)
+        allowed=[...new Set(allowed.map(Number).filter(v=>Number.isFinite(v)))].sort((x,y)=>x-y);
+        currentAllowedMultipliers = allowed.slice();
         setMultiplierOptions(allowed,true);
       }
     }
 
     // ========= handlers auxiliares =========
+    function nearestAllowedMultiplier(cur){
+      if(!currentAllowedMultipliers.length) return cur;
+      if(currentAllowedMultipliers.includes(cur)) return cur;
+      let best=currentAllowedMultipliers[0], bestDiff=Infinity;
+      currentAllowedMultipliers.forEach(v=>{ const d=Math.abs(v-cur); if(d<bestDiff){ best=v; bestDiff=d; } });
+      return best;
+    }
     function handleAcceptsAutoRetry(allowedList){
       const now = Date.now();
-      if(now < acceptsRetryGuardUntil) return; // evita loop
+      if(now < acceptsRetryGuardUntil) return;
       if(!Array.isArray(allowedList) || !allowedList.length) return;
-      // escolher o mais próximo do selecionado atual
-      const cur = Number(els.multInput.value||0);
-      let best = allowedList[0];
-      let bestDiff = Infinity;
-      allowedList.forEach(v=>{
-        const d = Math.abs(v - cur);
-        if(d < bestDiff){ best=v; bestDiff=d; }
-      });
-      // aplicar e reenviar
+      allowedList = [...new Set(allowedList.map(Number).filter(v=>Number.isFinite(v)))].sort((x,y)=>x-y);
+      currentAllowedMultipliers = allowedList.slice();
+      setMultiplierOptions(allowedList,true);
+      const curSel = Number(els.multInput.value||0);
+      const best = nearestAllowedMultiplier(curSel);
       els.multInput.value = String(best);
       acceptsRetryGuardUntil = now + 1500;
-      setTimeout(()=>{
-        if(lastClickedDirection) placeMultiplier(lastClickedDirection);
-      }, 40);
+      setTimeout(()=>{ if(lastClickedDirection) placeMultiplier(lastClickedDirection); }, 50);
     }
 
     // ========= API helpers =========
@@ -560,7 +563,7 @@
       const grid = document.createElement('div');
       grid.className = 'grid grid-cols-2 gap-x-3 gap-y-1 text-sm';
       grid.innerHTML = `
-        <div class="text-slate-400">Custos do contrato</div><div class="text-slate-200" id="v_cost">${meta.amount.toFixed(2)} ${meta.currency}</div>
+        <div class="text-slate-400">Custos do contrato</div><div class="text-slate-200" id="v_value_init">${meta.amount.toFixed(2)} ${meta.currency}</div>
         <div class="text-slate-400">Valor do contrato</div><div class="text-slate-200" id="v_value">${meta.amount.toFixed(2)} ${meta.currency}</div>
         <div class="text-slate-400">Entrada</div><div class="text-slate-200" id="v_entry">${meta.amount.toFixed(2)} ${meta.currency}</div>
         <div class="text-slate-400">Take profit</div><div class="text-slate-200" id="v_tp">${meta.tp>0?meta.tp.toFixed(2):'-'}</div>
@@ -603,8 +606,21 @@
     // ========= AÇÕES =========
     function placeMultiplier(direction){
       if(!authorized) return toast('Autorize primeiro',true);
-      const symbol=els.symbolSelect.value, amount=Number(els.stakeInput.value||0), multiplier=Number(els.multInput.value||0);
-      if(!symbol||!amount||!multiplier){ els.posStatus.textContent='Preencha símbolo, stake e multiplier'; return; }
+      const symbol=els.symbolSelect.value;
+      const amount=Number(els.stakeInput.value||0);
+      let multiplier=Number(els.multInput.value||0);
+
+      // validações reais (evita falso "Preencha ...")
+      if(!symbol || !Number.isFinite(amount) || amount<=0){ els.posStatus.textContent='Preencha símbolo e stake'; return; }
+
+      // se o atual não for aceito, ajusta para o permitido mais próximo
+      if(currentAllowedMultipliers && currentAllowedMultipliers.length){
+        if(!currentAllowedMultipliers.includes(multiplier)){
+          multiplier = nearestAllowedMultiplier(multiplier);
+          els.multInput.value = String(multiplier);
+        }
+      }
+      if(!Number.isFinite(multiplier) || multiplier<=0){ els.posStatus.textContent='Selecione um multiplier válido'; return; }
 
       const tp=Number(els.tpInput.value||0), sl=Number(els.slInput.value||0);
 
@@ -616,13 +632,12 @@
       lastUserActionAt=Date.now();
       els.posStatus.textContent='Enviando proposal...';
 
-      const echo={ passthrough: meta };
       const req={
         proposal:1,
         amount, basis:'stake',
         contract_type: direction==='up' ? 'MULTUP' : 'MULTDOWN',
         currency, symbol, multiplier,
-        ...echo
+        passthrough: meta
       };
       if(tp>0 || sl>0){
         req.limit_order = {};
@@ -685,11 +700,14 @@
     els.upBtn.onclick=()=>{ lastClickedDirection='up'; placeMultiplier('up'); };
     els.downBtn.onclick=()=>{ lastClickedDirection='down'; placeMultiplier('down'); };
     document.getElementById('resetBtn').onclick=()=>{
+      // remove cartões fechados
       for(const [cid,pos] of positions){ if(pos.closed){ positions.delete(cid); const el=document.getElementById(`pos-${cid}`); if(el) el.remove(); } }
       updatePosStatus();
+      // repor inputs
       els.stakeInput.value = 10; els.tpInput.value = ''; els.slInput.value = '';
-      const first=els.symbolSelect.querySelector('option');
-      if(first){ els.symbolSelect.value = first.value; subscribeTicks(first.value); loadCandles(first.value,60); checkMultipliersAvailability(first.value); }
+      // voltar ao padrão Volatility 100 (1s)
+      const chosen = selectDefaultSymbol();
+      if(chosen){ subscribeTicks(chosen); loadCandles(chosen,60); checkMultipliersAvailability(chosen); }
       els.tfSelect.value = '60';
     };
 
