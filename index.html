@@ -19,9 +19,7 @@
     @media (max-width:1024px){ .layout{ grid-template-columns:1fr } }
     select:focus,select:active{ color:#000 !important } select option{ color:#000 }
     #chartWrap{ height:480px; transition:height .2s ease } @media (max-width:1024px){ #chartWrap{ height:420px } }
-    /* Cores de P/L e Valor do contrato com prioridade */
-    .pl-green{ color:#22c55e !important }
-    .pl-red{ color:#ef4444 !important }
+    .pl-green{ color:#22c55e !important } .pl-red{ color:#ef4444 !important }
   </style>
 </head>
 <body>
@@ -167,7 +165,7 @@
     const WS_URL  = `wss://ws.derivws.com/websockets/v3?app_id=${APP_ID}`;
     const OAUTH_URL = `https://oauth.deriv.com/oauth2/authorize?app_id=${APP_ID}`;
 
-    // TODOS os multiplicadores visíveis no seletor
+    // Todos os multiplicadores visíveis
     const ALL_MULTS = [10,15,20,40,50,80,100,150,200,250,300,350,400,450,500,700,800,1000,1300,1500,1600,2000,2500,3200];
     const DEFAULT_SYMBOL_REGEX = /Volatility 100 \(1s\)/i;
 
@@ -176,11 +174,15 @@
     let tickSubId=null, ohlcSubId=null, balanceSubId=null;
     let lwChart=null, candleSeries=null, currentSymbol=null, currentGranularity=60, liveBar=null;
 
+    // guards anti re-subscribe
+    let activeTicksSymbol = null;
+    let activeOHLCKey = null; // `${symbol}|${granularity}`
+
     const positions = new Map();
     const allowedBySymbol = new Map(); // symbol -> [allowed multipliers]
     let currentAllowedMultipliers = [];
 
-    // ÁUDIO (cash em lucro)
+    // ÁUDIO (cash ao lucrar)
     let audioCtx = null;
     function playCash(){ try{
       if(!audioCtx) audioCtx = new (window.AudioContext||window.webkitAudioContext)();
@@ -218,25 +220,30 @@
       els.loginNote.textContent = on ? 'Autorizado. Escolhe a conta e o símbolo para negociar.' : 'Clique em Conectar para iniciar o OAuth.';
       if(dis){ els.balanceInput.value=''; els.balanceInput.placeholder='—'; }
     }
+
     function translateError(msg){
       let m=String(msg||'');
       m = m.replace(/Your account balance \(([^)]+)\) is insufficient to buy this contract \(([^)]+)\)\./i, 'Saldo da sua conta ($1) é insuficiente para comprar este contrato ($2).');
       m = m.replace(/Input validation failed:? ?(.+)?/i,'Validação de entrada falhou.');
       m = m.replace(/Market is closed/i,'O mercado está fechado');
       m = m.replace(/Insufficient balance/i,'Saldo insuficiente');
-      m = m.replace(/Unrecognised request/i,'Pedido não reconhecido');
+      m = m.replace(/Unrecognised request|Unrecognized request/i,'Pedido não reconhecido');
+      m = m.replace(/You are already subscribed to ([A-Za-z0-9_\.]+)/i,'Já existe uma subscrição ativa para $1.');
+      m = m.replace(/Already subscribed/i,'Já existe uma subscrição ativa.');
       m = m.replace(/Multiplier is not in acceptable range\. Accepts (.+)$/i,'O multiplicador selecionado não é aceite. Aceites: $1');
       return m;
     }
+
     function toast(msg,isErr=false){
       const s=String(msg||'');
-      // Quando a API devolve "Accepts: ...", apenas informamos (não auto-ajustamos)
+      // “Accepts …” → só informa (não ajusta)
       if(isErr && /Accepts/i.test(s)){
         const raw = s.split('Accepts')[1]?.replace(':','').trim() || '';
         const values = raw.split(',').map(x=>Number(x.trim())).filter(Number.isFinite).sort((a,b)=>a-b);
         if(values.length){
           allowedBySymbol.set(currentSymbol, values.slice());
           currentAllowedMultipliers = values.slice();
+          updateMultiplierHighlights(); // realça ✓
           const list = values.map(v=>'x'+v).join(', ');
           els.posStatus.textContent = `Erro: O multiplicador selecionado não é suportado para este mercado. Suportados: ${list}.`;
         } else {
@@ -247,6 +254,7 @@
       console[isErr?'error':'log'](msg);
       if(isErr){ els.posStatus.textContent = `Erro: ${translateError(s)}`; }
     }
+
     function setBadge(available){
       const b=els.multBadge; if(!b) return;
       b.classList.remove('hidden');
@@ -256,7 +264,7 @@
         : 'px-2 py-1 rounded-lg text-xs border bg-rose-500/10 text-rose-300 border-rose-500/30';
     }
 
-    // Renderiza TODOS os multiplicadores no select (sempre)
+    // Renderizar TODOS os multiplicadores
     function renderAllMultipliers(){
       els.multInput.innerHTML='';
       ALL_MULTS.forEach(v=>{
@@ -265,6 +273,18 @@
         els.multInput.appendChild(o);
       });
       els.multInput.disabled=false;
+      updateMultiplierHighlights(); // aplica ✓ conforme o mercado atual
+    }
+
+    // Realça com ✓ os suportados pelo mercado atual (mantendo todos)
+    function updateMultiplierHighlights(){
+      const allowed = allowedBySymbol.get(currentSymbol) || currentAllowedMultipliers || [];
+      const allowedSet = new Set(allowed);
+      Array.from(els.multInput.options).forEach(opt=>{
+        const n = Number(opt.value);
+        const base = 'x'+n;
+        opt.textContent = allowedSet.has(n) ? (base+' ✓') : base;
+      });
     }
 
     function updatePosStatus(){
@@ -303,9 +323,20 @@
       };
       ws.onclose=()=>{ setConnectedUI(false); setAuthUI(false); };
       ws.onmessage=handleMessage;
-      ws.onerror=()=>toast('WebSocket error',true);
+      ws.onerror=()=>toast('Erro de WebSocket',true);
     }
     function send(msg){ if(!ws||ws.readyState!==1){ toast('WS não conectado',true); return; } ws.send(JSON.stringify(msg)); }
+
+    // ========= SUBSCRIÇÕES: helpers =========
+    function forgetAllSubscriptions(){
+      if(tickSubId){ send({ forget: tickSubId }); tickSubId=null; }
+      if(ohlcSubId){ send({ forget: ohlcSubId }); ohlcSubId=null; }
+      // limpeza extra para garantir estado no servidor
+      send({ forget_all: 'ticks' });
+      send({ forget_all: 'candles' });
+      activeTicksSymbol = null;
+      activeOHLCKey = null;
+    }
 
     // ========= MENSAGENS =========
     function handleMessage(evt){
@@ -315,17 +346,15 @@
       if(data.msg_type==='authorize'){
         loginId=data.authorize.loginid; currency=data.authorize.currency||'USD';
         setAuthUI(true); initChart(); loadActiveSymbols(); subscribeBalance(); updatePosStatus();
-        renderAllMultipliers(); // habilita seletor com TODOS os multiplicadores
+        renderAllMultipliers();
       }
 
       if(data.msg_type==='active_symbols'){
         const list=(data.active_symbols||[]).map(s=>({
           symbol:s.symbol, display:s.display_name, market:s.market, submarket:(s.submarket||'').toLowerCase()
         }));
-        // Agrupamento por mercados
         const groups = {};
         function groupPush(key,label,item){ if(!groups[key]) groups[key]={label,items:[]}; groups[key].items.push(item); }
-
         list.forEach(s=>{
           const mk=s.market;
           if(mk==='synthetic_index') groupPush('synthetic','Derived Synthetic',s);
@@ -342,7 +371,6 @@
           } else groupPush('others','Outros',s);
         });
 
-        // desenhar select
         els.symbolSelect.innerHTML='';
         Object.values(groups).forEach(g=>{
           g.items.sort((a,b)=>a.display.localeCompare(b.display));
@@ -351,13 +379,13 @@
           els.symbolSelect.appendChild(og);
         });
 
-        // DEFAULT: Volatility 100 (1s)
         const chosen = selectDefaultSymbol();
         if(chosen){
           currentSymbol = chosen;
           subscribeTicks(currentSymbol);
           loadCandles(currentSymbol,currentGranularity);
-          checkMultipliersAvailability(currentSymbol); // preenche allowed
+          checkMultipliersAvailability(currentSymbol);
+          renderAllMultipliers();
         }
       }
 
@@ -418,19 +446,16 @@
         pos.els.tp.textContent = tp>0 ? tp.toFixed(2) : '-';
         pos.els.sl.textContent = sl>0 ? sl.toFixed(2) : '-';
 
-        // P/L + valor do contrato (com cores)
         const pl=(poc.profit||0);
         pos.els.pl.classList.remove('pl-green','pl-red');
         pos.els.pl.textContent = `${pl.toFixed(2)} ${pos.meta.currency}`;
-        if(pl>0) pos.els.pl.classList.add('pl-green');
-        else if(pl<0) pos.els.pl.classList.add('pl-red');
+        if(pl>0) pos.els.pl.classList.add('pl-green'); else if(pl<0) pos.els.pl.classList.add('pl-red');
 
         const entry = (pos.entry||pos.meta.amount);
         const contractVal = entry + pl;
         pos.els.value.classList.remove('pl-green','pl-red');
         pos.els.value.textContent = `${contractVal.toFixed(2)} ${pos.meta.currency}`;
-        if(contractVal>entry) pos.els.value.classList.add('pl-green');
-        else if(contractVal<entry) pos.els.value.classList.add('pl-red');
+        if(contractVal>entry) pos.els.value.classList.add('pl-green'); else if(contractVal<entry) pos.els.value.classList.add('pl-red');
 
         if(!pos.priceLine && poc.entry_tick){
           const isUp = poc.contract_type && poc.contract_type.includes('UP');
@@ -442,7 +467,6 @@
           });
         }
 
-        // fecho automático por TP / SL
         if(!pos.closed && !pos.closing){
           if(tp>0 && pl >= tp){ pos.closing=true; send({ sell: cid, price: 0 }); }
           if(sl>0 && -pl >= sl){ pos.closing=true; send({ sell: cid, price: 0 }); }
@@ -465,7 +489,7 @@
         if(data.subscription && data.subscription.id && !balanceSubId){ balanceSubId=data.subscription.id; }
       }
 
-      // multipliers por símbolo (lista suportada REAL — para validação)
+      // multipliers por símbolo (reais — apenas para validação e realce)
       if(data.msg_type==='contracts_for' && data.contracts_for){
         const a=data.contracts_for.available||[];
         const types=a.flatMap(x=>x.contract_type||[]);
@@ -481,22 +505,46 @@
           }
         }
         allowed=[...new Set(allowed.map(Number).filter(Number.isFinite))].sort((x,y)=>x-y);
-        allowedBySymbol.set((data.echo_req && data.echo_req.contracts_for) || currentSymbol, allowed);
-        if((data.echo_req && data.echo_req.contracts_for) === currentSymbol) currentAllowedMultipliers = allowed.slice();
+        const sym = (data.echo_req && data.echo_req.contracts_for) || currentSymbol;
+        allowedBySymbol.set(sym, allowed);
+        if(sym === currentSymbol){ currentAllowedMultipliers = allowed.slice(); updateMultiplierHighlights(); }
       }
     }
 
     // ========= API =========
     function authorize(token,acct,cur){ currency=(cur||'USD').toUpperCase(); send({ authorize:token, passthrough:{acct} }); }
     function loadActiveSymbols(){ send({ active_symbols:'full' }); }
+
     function subscribeTicks(symbol){
-      if(tickSubId){ send({ forget:tickSubId }); tickSubId=null; }
+      // evitar duplicar sub
+      if(activeTicksSymbol===symbol && tickSubId){ return; }
+      if(tickSubId){ send({ forget: tickSubId }); tickSubId=null; }
+      send({ forget_all: 'ticks' }); // hard clean
+      activeTicksSymbol = null;
+
       if(els.tickSymbol) els.tickSymbol.textContent=symbol; if(els.tickNote) els.tickNote.textContent='Recebendo ticks...';
       send({ ticks:symbol, subscribe:1 });
       ws.addEventListener('message', function once(e){ const d=JSON.parse(e.data);
-        if(d.msg_type==='tick'&&d.tick&&d.subscription&&d.subscription.id){ tickSubId=d.subscription.id; ws.removeEventListener('message',once); }
+        if(d.msg_type==='tick'&&d.tick&&d.subscription&&d.subscription.id){ tickSubId=d.subscription.id; activeTicksSymbol = symbol; ws.removeEventListener('message',once); }
       });
     }
+
+    function loadCandles(symbol,granularitySec){
+      if(!symbol) return; currentSymbol=symbol; currentGranularity=Number(granularitySec||60);
+      const key = `${symbol}|${currentGranularity}`;
+      if(activeOHLCKey===key && ohlcSubId){ return; }
+
+      liveBar=null; if(candleSeries){ candleSeries.setData([]); }
+      if(ohlcSubId){ send({ forget: ohlcSubId }); ohlcSubId=null; }
+      send({ forget_all: 'candles' }); // hard clean
+      activeOHLCKey = null;
+
+      send({ ticks_history:symbol, adjust_start_time:1, count:300, end:'latest', style:'candles', granularity:currentGranularity });
+      send({ ohlc:1, symbol, granularity:currentGranularity, subscribe:1 });
+      ws.addEventListener('message', function once(e){ try{ const d=JSON.parse(e.data);
+        if(d.msg_type==='ohlc'&&d.subscription&&d.subscription.id){ ohlcSubId=d.subscription.id; activeOHLCKey = key; ws.removeEventListener('message',once);} }catch(err){} });
+    }
+
     function subscribeOpenContract(contract_id){
       send({ proposal_open_contract:1, contract_id, subscribe:1, passthrough:{contract_id} });
       ws.addEventListener('message', function once(e){ const d=JSON.parse(e.data);
@@ -507,9 +555,9 @@
         }
       });
     }
+
     function subscribeBalance(){ if(balanceSubId){ send({ forget:balanceSubId }); balanceSubId=null; } send({ balance:1, subscribe:1 }); els.refreshBalanceBtn.disabled=false; }
 
-    // ========= MULTIPLIERS (consulta) =========
     function checkMultipliersAvailability(symbol){ send({ contracts_for:symbol, currency }); }
 
     // ========= POSIÇÕES (UI) =========
@@ -573,11 +621,11 @@
       const multiplier=Number(els.multInput.value||0);
       if(!symbol||!amount||!multiplier){ els.posStatus.textContent='Preencha símbolo, stake e multiplier'; return; }
 
-      // validação: se houver lista suportada, impedir multiplicador inválido e avisar
       const allowed = allowedBySymbol.get(symbol) || currentAllowedMultipliers || [];
       if(Array.isArray(allowed) && allowed.length && !allowed.includes(multiplier)){
         const list = allowed.map(v=>'x'+v).join(', ');
         els.posStatus.textContent = `O multiplicador x${multiplier} não é suportado para este mercado. Suportados: ${list}.`;
+        updateMultiplierHighlights();
         return;
       }
 
@@ -609,14 +657,22 @@
       candleSeries=lwChart.addCandlestickSeries({ upColor:'#22c55e', downColor:'#ef4444', wickUpColor:'#22c55e', wickDownColor:'#ef4444', borderVisible:false });
       new ResizeObserver(()=>{ lwChart.applyOptions({}); }).observe(els.chartWrap);
     }
+
     function loadCandles(symbol,granularitySec){
       if(!symbol) return; currentSymbol=symbol; currentGranularity=Number(granularitySec||60);
+      const key = `${symbol}|${currentGranularity}`;
+      if(activeOHLCKey===key && ohlcSubId){ return; }
+
       liveBar=null; if(candleSeries){ candleSeries.setData([]); }
-      if(ohlcSubId){ send({ forget:ohlcSubId }); ohlcSubId=null; }
+      if(ohlcSubId){ send({ forget: ohlcSubId }); ohlcSubId=null; }
+      send({ forget_all: 'candles' }); // garante limpeza
+
+      activeOHLCKey = null;
+
       send({ ticks_history:symbol, adjust_start_time:1, count:300, end:'latest', style:'candles', granularity:currentGranularity });
       send({ ohlc:1, symbol, granularity:currentGranularity, subscribe:1 });
       ws.addEventListener('message', function once(e){ try{ const d=JSON.parse(e.data);
-        if(d.msg_type==='ohlc'&&d.subscription&&d.subscription.id){ ohlcSubId=d.subscription.id; ws.removeEventListener('message',once);} }catch(err){} });
+        if(d.msg_type==='ohlc'&&d.subscription&&d.subscription.id){ ohlcSubId=d.subscription.id; activeOHLCKey = key; ws.removeEventListener('message',once);} }catch(err){} });
     }
 
     // ========= EVENTOS =========
@@ -624,9 +680,7 @@
     els.logoutBtn.onclick=()=>{
       positions.clear(); els.positionsList.innerHTML=''; updatePosStatus();
       if(ws&&ws.readyState===1) ws.close();
-      if(balanceSubId){ send({ forget:balanceSubId }); balanceSubId=null; }
-      if(tickSubId){ send({ forget:tickSubId }); tickSubId=null; }
-      if(ohlcSubId){ send({ forget:ohlcSubId }); ohlcSubId=null; }
+      forgetAllSubscriptions();
       clearTokens(); setAuthUI(false); els.accountSelect.innerHTML=''; if(candleSeries) candleSeries.setData([]);
     };
     els.useAccountBtn.onclick=()=>{
@@ -637,27 +691,39 @@
       setTimeout(()=>{ subscribeBalance(); },200);
     };
     els.refreshBalanceBtn.onclick=()=> send({ balance:1 });
+
     els.symbolSelect.onchange=(e)=>{
       const sym=e.target.value;
-      subscribeTicks(sym); loadCandles(sym,currentGranularity);
-      checkMultipliersAvailability(sym); // atualiza lista suportada para validação
-      renderAllMultipliers();            // mantém TODOS visíveis
+      subscribeTicks(sym);
+      loadCandles(sym,currentGranularity);
+      checkMultipliersAvailability(sym);
+      renderAllMultipliers(); // mantém todos e realça ✓
     };
+
     els.tfSelect.onchange=(e)=>{ loadCandles(els.symbolSelect.value, Number(e.target.value||60)); };
+
     els.upBtn.onclick=()=>{ placeMultiplier('up'); };
     els.downBtn.onclick=()=>{ placeMultiplier('down'); };
+
     document.getElementById('resetBtn').onclick=()=>{
+      // limpa posições fechadas da lista
       for(const [cid,pos] of positions){ if(pos.closed){ positions.delete(cid); const el=document.getElementById(`pos-${cid}`); if(el) el.remove(); } }
       updatePosStatus();
+      // limpar subscrições completamente para evitar "Já existe uma subscrição…"
+      forgetAllSubscriptions();
+      // restaurar campos
       els.stakeInput.value = 10; els.tpInput.value = ''; els.slInput.value = '';
+      els.tfSelect.value = '60';
+      // voltar SEMPRE a Volatility 100 (1s)
       const chosen = selectDefaultSymbol();
       if(chosen){
-        els.symbolSelect.value = chosen;
-        subscribeTicks(chosen); loadCandles(chosen,60);
+        currentSymbol = chosen;
+        subscribeTicks(chosen);
+        loadCandles(chosen,60);
         checkMultipliersAvailability(chosen);
       }
-      els.tfSelect.value = '60';
       renderAllMultipliers();
+      els.posStatus.textContent = 'Histórico limpo.';
     };
 
     // ========= BOOT =========
@@ -665,7 +731,8 @@
       extractTokensFromUrl();
       const stored=getStoredTokens();
       if(stored.length){
-        els.accountSelect.innerHTML=''; stored.forEach(t=>{ const o=document.createElement('option'); o.value=t.account; o.textContent=`${t.account} • ${t.currency}`; els.accountSelect.appendChild(o); });
+        els.accountSelect.innerHTML='';
+        stored.forEach(t=>{ const o=document.createElement('option'); o.value=t.account; o.textContent=`${t.account} • ${t.currency}`; els.accountSelect.appendChild(o); });
         els.accountSelect.disabled=false; els.useAccountBtn.disabled=false;
         connectWS(); const first=stored[0]; localStorage.setItem('POINT_SELECTED',JSON.stringify(first)); authorize(first.token,first.account,first.currency);
       }else{ connectWS(); initChart(); }
