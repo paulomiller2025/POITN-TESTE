@@ -166,25 +166,20 @@
     const WS_URL  = `wss://ws.derivws.com/websockets/v3?app_id=${APP_ID}`;
     const OAUTH_URL = `https://oauth.deriv.com/oauth2/authorize?app_id=${APP_ID}`;
 
-    // candidato de multipliers (mostramos só os aceites pela API para o símbolo)
+    // ordem preferida apenas para ORGANIZAR quando a API aceitar vários
     const PREFERRED_MULTS = [10,15,20,40,50,80,100,200,250,350,400,450,500,700,800,1300,1600,2500,3200];
 
-    // símbolo padrão desejado
     const DEFAULT_SYMBOL_REGEX = /Volatility 100 \(1s\)/i;
 
     // ========= ESTADO =========
-    let ws=null, authorized=false, loginId=null, currency='USD';
+    let ws=null, authorized=false, currency='USD';
     let tickSubId=null, ohlcSubId=null, balanceSubId=null;
     let lwChart=null, candleSeries=null, currentSymbol=null, currentGranularity=60, liveBar=null;
 
-    // VÁRIOS CONTRATOS
-    const positions = new Map(); // contract_id -> { meta, els, subId, entry, priceLine, closed, closing }
-    let lastUserActionAt = 0;
-    let lastClickedDirection = null;
-    let acceptsRetryGuardUntil = 0;
+    const positions = new Map();
     let currentAllowedMultipliers = []; // vindo de contracts_for
 
-    // ÁUDIO (som de cash em lucro)
+    // ========= ÁUDIO GANHO =========
     let audioCtx = null;
     function playCash(){
       try{
@@ -195,17 +190,9 @@
         g.gain.exponentialRampToValueAtTime(0.25, t+0.02);
         g.gain.exponentialRampToValueAtTime(0.0001, t+0.35);
         g.connect(audioCtx.destination);
-
-        const o1 = audioCtx.createOscillator();
-        o1.type='triangle'; o1.frequency.setValueAtTime(1320, t);
-        o1.frequency.exponentialRampToValueAtTime(880, t+0.3);
-        o1.connect(g); o1.start(t); o1.stop(t+0.35);
-
-        const o2 = audioCtx.createOscillator();
-        o2.type='square'; o2.frequency.setValueAtTime(1980, t);
-        o2.frequency.exponentialRampToValueAtTime(990, t+0.25);
-        o2.connect(g); o2.start(t); o2.stop(t+0.3);
-      }catch(e){ /* ok */ }
+        const o1 = audioCtx.createOscillator(); o1.type='triangle'; o1.frequency.setValueAtTime(1320, t); o1.frequency.exponentialRampToValueAtTime(880, t+0.3); o1.connect(g); o1.start(t); o1.stop(t+0.35);
+        const o2 = audioCtx.createOscillator(); o2.type='square';   o2.frequency.setValueAtTime(1980, t); o2.frequency.exponentialRampToValueAtTime(990, t+0.25); o2.connect(g); o2.start(t); o2.stop(t+0.3);
+      }catch(e){}
     }
 
     // ========= DOM =========
@@ -222,7 +209,7 @@
       posStatus:document.getElementById('posStatus'), positionsList:document.getElementById('positionsList'), resetBtn:document.getElementById('resetBtn'),
     };
 
-    // ========= UI helpers =========
+    // ========= UI HELPERS =========
     function setConnectedUI(on){ els.connStatus.textContent = on ? 'Conectado (WebSocket ativo)' : 'Desconectado'; }
     function setAuthUI(on){
       authorized=!!on; const dis=!on;
@@ -234,24 +221,29 @@
     }
     function translateError(msg){
       let m=String(msg||'');
-      m = m.replace(/Your account balance \(([^)]+)\) is insufficient to buy this contract \(([^)]+)\)\./i,
-                    'Saldo da sua conta ($1) é insuficiente para comprar este contrato ($2).');
+      m = m.replace(/Your account balance \(([^)]+)\) is insufficient to buy this contract \(([^)]+)\)\./i, 'Saldo da sua conta ($1) é insuficiente para comprar este contrato ($2).');
       m = m.replace(/Input validation failed:? ?(.+)?/i,'Validação de entrada falhou.');
       m = m.replace(/Market is closed/i,'O mercado está fechado');
       m = m.replace(/Insufficient balance/i,'Saldo insuficiente');
       m = m.replace(/Not authorized/i,'Não autorizado');
+      m = m.replace(/Multiplier is not in acceptable range\. Accepts (.+)$/i,'O multiplicador selecionado não é aceite. Aceites: $1');
       return m;
     }
     function toast(msg,isErr=false){
-      const recent=(Date.now()-lastUserActionAt)<4000;
       const s=String(msg||'');
+      // Se vier "Accepts", sincroniza o seletor com a lista aceita e pede ao usuário escolher (sem auto-ajustar)
       if(isErr && /Accepts/i.test(s)){
-        const nums = s.split('Accepts')[1]?.replace(':','').split(',').map(x=>Number(x.trim())).filter(Boolean) || [];
-        handleAcceptsAutoRetry(nums);
+        const raw = s.split('Accepts')[1]?.replace(':','').trim() || '';
+        const values = raw.split(',').map(x=>Number(x.trim())).filter(Number.isFinite).sort((a,b)=>a-b);
+        if(values.length){
+          currentAllowedMultipliers = values.slice();
+          setMultiplierOptions(values,true);
+          els.posStatus.textContent = 'Erro: ' + translateError(s);
+        }
         return;
       }
       console[isErr?'error':'log'](msg);
-      if(isErr && recent){ els.posStatus.textContent = `Erro: ${translateError(s)}`; }
+      if(isErr){ els.posStatus.textContent = `Erro: ${translateError(s)}`; }
     }
     function setBadge(available){
       const b=els.multBadge; if(!b) return;
@@ -267,16 +259,24 @@
       const rest = allowed.filter(v=>!top.includes(v));
       return [...top, ...rest];
     }
-    function setMultiplierOptions(allowed,forceEnable=false){
+    function setMultiplierOptions(allowed, forceEnable=false){
       const arr = Array.isArray(allowed)&&allowed.length
-        ? [...new Set(allowed.map(Number).filter(v=>Number.isFinite(v)))].sort((x,y)=>x-y)
-        : [10,50,100,200,400];
+        ? [...new Set(allowed.map(Number).filter(Number.isFinite))].sort((a,b)=>a-b)
+        : [];
       currentAllowedMultipliers = arr.slice();
-      const ordered = orderByPreference(arr);
       els.multInput.innerHTML='';
-      ordered.forEach(v=>{ const o=document.createElement('option'); o.value=String(v); o.textContent='x'+v; els.multInput.appendChild(o); });
-      if(forceEnable || !els.multInput.disabled) els.multInput.disabled=false;
-      if(els.multInput.options.length>0) els.multInput.selectedIndex=0;
+      if(arr.length){
+        const ordered = orderByPreference(arr);
+        ordered.forEach(v=>{ const o=document.createElement('option'); o.value=String(v); o.textContent='x'+v; els.multInput.appendChild(o); });
+        els.multInput.disabled = false;
+        els.upBtn.disabled = !authorized;
+        els.downBtn.disabled = !authorized;
+      }else{
+        // nenhum multiplier disponível — desativa
+        const o=document.createElement('option'); o.textContent='—'; o.value=''; els.multInput.appendChild(o);
+        els.multInput.disabled = true;
+        els.upBtn.disabled = true; els.downBtn.disabled = true;
+      }
     }
     function updatePosStatus(){
       const openCount = Array.from(positions.values()).filter(p=>!p.closed).length;
@@ -289,7 +289,7 @@
       return null;
     }
 
-    // ========= OAUTH / storage =========
+    // ========= OAUTH =========
     function extractTokensFromUrl(){
       const q=new URLSearchParams(location.search); const tokens=[];
       for(let i=1;i<=10;i++){ const acct=q.get(`acct${i}`),token=q.get(`token${i}`),cur=q.get(`cur${i}`); if(acct&&token){ tokens.push({account:acct.toUpperCase(),token,currency:(cur||'USD').toUpperCase()}); } }
@@ -299,10 +299,11 @@
     function clearTokens(){ localStorage.removeItem('POINT_TOKENS'); localStorage.removeItem('POINT_SELECTED'); }
 
     // ========= WS =========
+    let wsObj=null;
     function connectWS(){
-      if(ws&&ws.readyState===1) return;
-      ws=new WebSocket(WS_URL);
-      ws.onopen=()=>{
+      if(wsObj&&wsObj.readyState===1) return;
+      wsObj=new WebSocket(WS_URL);
+      wsObj.onopen=()=>{
         setConnectedUI(true);
         const remembered=JSON.parse(localStorage.getItem('POINT_SELECTED')||'null');
         const tokens=getStoredTokens();
@@ -311,19 +312,19 @@
           if(match) authorize(match.token,match.account,match.currency);
         }
       };
-      ws.onclose=()=>{ setConnectedUI(false); setAuthUI(false); };
-      ws.onmessage=handleMessage;
-      ws.onerror=()=>toast('WebSocket error',true);
+      wsObj.onclose=()=>{ setConnectedUI(false); setAuthUI(false); };
+      wsObj.onmessage=handleMessage;
+      wsObj.onerror=()=>toast('WebSocket error',true);
     }
-    function send(msg){ if(!ws||ws.readyState!==1){ toast('WS não conectado',true); return; } ws.send(JSON.stringify(msg)); }
+    function send(msg){ if(!wsObj||wsObj.readyState!==1){ toast('WS não conectado',true); return; } wsObj.send(JSON.stringify(msg)); }
 
-    // ========= MENSAGENS =========
+    // ========= HANDLER =========
     function handleMessage(evt){
       const data=JSON.parse(evt.data);
       if(data.error){ toast(data.error.message||'Erro desconhecido',true); return; }
 
       if(data.msg_type==='authorize'){
-        loginId=data.authorize.loginid; currency=data.authorize.currency||'USD';
+        currency=data.authorize.currency||'USD';
         setAuthUI(true); initChart(); loadActiveSymbols(); subscribeBalance(); updatePosStatus();
       }
 
@@ -331,10 +332,8 @@
         const list=(data.active_symbols||[]).map(s=>({
           symbol:s.symbol, display:s.display_name, market:s.market, submarket:(s.submarket||'').toLowerCase()
         }));
-        // Agrupar
         const groups = {};
         function groupPush(key,label,item){ if(!groups[key]) groups[key]={label,items:[]}; groups[key].items.push(item); }
-
         list.forEach(s=>{
           const mk=s.market;
           if(mk==='synthetic_index') groupPush('synthetic','Derived Synthetic',s);
@@ -352,8 +351,6 @@
             groupPush('others','Outros',s);
           }
         });
-
-        // Render
         els.symbolSelect.innerHTML='';
         Object.values(groups).forEach(g=>{
           g.items.sort((a,b)=>a.display.localeCompare(b.display));
@@ -366,13 +363,14 @@
         const chosen = selectDefaultSymbol();
         if(chosen){
           currentSymbol = chosen;
+          // desativa ações até sabermos os multiplicadores reais deste símbolo
+          els.multInput.disabled = true; els.upBtn.disabled = true; els.downBtn.disabled = true;
           subscribeTicks(currentSymbol);
           loadCandles(currentSymbol,currentGranularity);
           checkMultipliersAvailability(currentSymbol);
         }
       }
 
-      // ticks (intrabar)
       if(data.msg_type==='tick'&&data.tick){
         const q=Number(data.tick.quote), epoch=Number(data.tick.epoch), sym=data.tick.symbol;
         if(els.tickPrice){ let s=q.toFixed(5); if(s.endsWith('00')) s=s.slice(0,-2); els.tickPrice.textContent=s; }
@@ -384,7 +382,6 @@
         }
       }
 
-      // histórico inicial
       if(data.msg_type==='candles'&&Array.isArray(data.candles)){
         const bars=data.candles.map(c=>({time:+c.epoch,open:+c.open,high:+c.high,low:+c.low,close:+c.close}));
         if(candleSeries){ candleSeries.setData(bars); liveBar=bars[bars.length-1]||null; lwChart.timeScale().fitContent(); }
@@ -396,7 +393,6 @@
         if(c.complete) liveBar=null;
       }
 
-      // proposal -> buy
       if(data.msg_type==='proposal'){
         if(data.proposal && data.proposal.id){
           const p=data.proposal;
@@ -405,7 +401,6 @@
         }
       }
 
-      // buy -> criar cartão + subscrever
       if(data.msg_type==='buy'){
         if(data.buy && data.buy.contract_id){
           const meta = (data.echo_req && data.echo_req.passthrough) ? data.echo_req.passthrough : {};
@@ -416,13 +411,11 @@
         }
       }
 
-      // cada contrato aberto
       if(data.msg_type==='proposal_open_contract'){
         const poc=data.proposal_open_contract; if(!poc || !poc.contract_id) return;
         const cid=poc.contract_id;
         const pos=positions.get(cid); if(!pos) return;
 
-        // entrada e P/L
         if(poc.buy_price!=null){ pos.entry = Number(poc.buy_price); pos.els.entry.textContent = `${pos.entry.toFixed(2)} ${pos.meta.currency}`; }
 
         const tp = (pos.meta.tp>0) ? pos.meta.tp : (poc.limit_order && poc.limit_order.take_profit ? Number(poc.limit_order.take_profit) : 0);
@@ -441,7 +434,6 @@
         pos.els.value.classList.toggle('pl-green', contractVal > entry);
         pos.els.value.classList.toggle('pl-red', contractVal < entry);
 
-        // linha de preço na 1ª atualização com tick de entrada
         if(!pos.priceLine && poc.entry_tick){
           const isUp = poc.contract_type && poc.contract_type.includes('UP');
           pos.priceLine = candleSeries.createPriceLine({
@@ -454,13 +446,11 @@
           });
         }
 
-        // fecho automático por TP / SL
         if(!pos.closed && !pos.closing){
           if(tp>0 && pl >= tp){ pos.closing=true; send({ sell: cid, price: 0 }); }
           if(sl>0 && -pl >= sl){ pos.closing=true; send({ sell: cid, price: 0 }); }
         }
 
-        // fechado
         if(poc.is_sold){
           pos.closed = true;
           pos.els.status.textContent = `Fechado · ${pl.toFixed(2)} ${pos.meta.currency}`;
@@ -478,13 +468,13 @@
         if(data.subscription && data.subscription.id && !balanceSubId){ balanceSubId=data.subscription.id; }
       }
 
-      // multipliers por símbolo
       if(data.msg_type==='contracts_for' && data.contracts_for){
         const a=data.contracts_for.available||[];
         const types=a.flatMap(x=>x.contract_type||[]);
         const hasMult=types.includes('MULTUP')||types.includes('MULTDOWN');
-        els.upBtn.disabled=!hasMult||!authorized; els.downBtn.disabled=!hasMult||!authorized; setBadge(hasMult);
+        setBadge(hasMult);
 
+        // construir lista somente com aceites
         let allowed=[];
         for(const item of a){
           if(item.contract_type && (item.contract_type.includes('MULTUP')||item.contract_type.includes('MULTDOWN'))){
@@ -493,54 +483,28 @@
             if(Array.isArray(item.multipliers)) allowed=allowed.concat(item.multipliers);
           }
         }
-        allowed=[...new Set(allowed.map(Number).filter(v=>Number.isFinite(v)))].sort((x,y)=>x-y);
-        currentAllowedMultipliers = allowed.slice();
+        allowed=[...new Set(allowed.map(Number).filter(Number.isFinite))].sort((x,y)=>a-b);
+        // (BUG FIX sort): 
+        allowed = allowed.sort((x,y)=>x-y);
+
+        // preencher o seletor SOMENTE com os aceites; desativar botões se vazio
         setMultiplierOptions(allowed,true);
       }
     }
 
-    // ========= handlers auxiliares =========
-    function nearestAllowedMultiplier(cur){
-      if(!currentAllowedMultipliers.length) return cur;
-      if(currentAllowedMultipliers.includes(cur)) return cur;
-      let best=currentAllowedMultipliers[0], bestDiff=Infinity;
-      currentAllowedMultipliers.forEach(v=>{ const d=Math.abs(v-cur); if(d<bestDiff){ best=v; bestDiff=d; } });
-      return best;
-    }
-    function handleAcceptsAutoRetry(allowedList){
-      const now = Date.now();
-      if(now < acceptsRetryGuardUntil) return;
-      if(!Array.isArray(allowedList) || !allowedList.length) return;
-      allowedList = [...new Set(allowedList.map(Number).filter(v=>Number.isFinite(v)))].sort((x,y)=>x-y);
-      currentAllowedMultipliers = allowedList.slice();
-      setMultiplierOptions(allowedList,true);
-      const curSel = Number(els.multInput.value||0);
-      const best = nearestAllowedMultiplier(curSel);
-      els.multInput.value = String(best);
-      acceptsRetryGuardUntil = now + 1500;
-      setTimeout(()=>{ if(lastClickedDirection) placeMultiplier(lastClickedDirection); }, 50);
-    }
-
-    // ========= API helpers =========
+    // ========= API =========
     function authorize(token,acct,cur){ currency=(cur||'USD').toUpperCase(); send({ authorize:token, passthrough:{acct} }); }
     function loadActiveSymbols(){ send({ active_symbols:'full' }); }
     function subscribeTicks(symbol){
       if(tickSubId){ send({ forget:tickSubId }); tickSubId=null; }
       if(els.tickSymbol) els.tickSymbol.textContent=symbol; if(els.tickNote) els.tickNote.textContent='Recebendo ticks...';
       send({ ticks:symbol, subscribe:1 });
-      ws.addEventListener('message', function once(e){ const d=JSON.parse(e.data);
-        if(d.msg_type==='tick'&&d.tick&&d.subscription&&d.subscription.id){ tickSubId=d.subscription.id; ws.removeEventListener('message',once); }
+      wsObj.addEventListener('message', function once(e){ const d=JSON.parse(e.data);
+        if(d.msg_type==='tick'&&d.tick&&d.subscription&&d.subscription.id){ tickSubId=d.subscription.id; wsObj.removeEventListener('message',once); }
       });
     }
     function subscribeOpenContract(contract_id){
-      send({ proposal_open_contract:1, contract_id, subscribe:1, passthrough:{contract_id} });
-      ws.addEventListener('message', function once(e){ const d=JSON.parse(e.data);
-        if(d.msg_type==='proposal_open_contract'&&d.subscription&&d.subscription.id){
-          const cid = d.proposal_open_contract.contract_id;
-          const pos = positions.get(cid); if(pos) pos.subId = d.subscription.id;
-          ws.removeEventListener('message',once);
-        }
-      });
+      send({ proposal_open_contract:1, contract_id, subscribe:1 });
     }
     function subscribeBalance(){ if(balanceSubId){ send({ forget:balanceSubId }); balanceSubId=null; } send({ balance:1, subscribe:1 }); els.refreshBalanceBtn.disabled=false; }
 
@@ -592,53 +556,33 @@
       };
       btn.onclick = ()=>{ send({ sell: contract_id, price: 0 }); };
 
-      positions.set(contract_id, {
-        meta,
-        els: refs,
-        subId: null,
-        entry: meta.amount,
-        priceLine: null,
-        closed: false,
-        closing: false
-      });
+      positions.set(contract_id, { meta, els: refs, subId:null, entry: meta.amount, priceLine:null, closed:false, closing:false });
     }
 
     // ========= AÇÕES =========
     function placeMultiplier(direction){
-      if(!authorized) return toast('Autorize primeiro',true);
+      if(!authorized){ els.posStatus.textContent='Erro: Não autorizado'; return; }
       const symbol=els.symbolSelect.value;
       const amount=Number(els.stakeInput.value||0);
-      let multiplier=Number(els.multInput.value||0);
+      const multiplier=Number(els.multInput.value||0);
 
-      // validações reais (evita falso "Preencha ...")
       if(!symbol || !Number.isFinite(amount) || amount<=0){ els.posStatus.textContent='Preencha símbolo e stake'; return; }
-
-      // se o atual não for aceito, ajusta para o permitido mais próximo
-      if(currentAllowedMultipliers && currentAllowedMultipliers.length){
-        if(!currentAllowedMultipliers.includes(multiplier)){
-          multiplier = nearestAllowedMultiplier(multiplier);
-          els.multInput.value = String(multiplier);
+      // NUNCA auto-ajustar; se não for aceito, bloquear com instrução em PT
+      if(!currentAllowedMultipliers.includes(multiplier)){
+        if(currentAllowedMultipliers.length){
+          els.posStatus.textContent='Erro: O multiplicador selecionado não é aceite para este mercado. Escolha um dos disponíveis no seletor.';
+        }else{
+          els.posStatus.textContent='Erro: Não há multiplicadores disponíveis para este mercado.';
         }
+        return;
       }
-      if(!Number.isFinite(multiplier) || multiplier<=0){ els.posStatus.textContent='Selecione um multiplier válido'; return; }
 
       const tp=Number(els.tpInput.value||0), sl=Number(els.slInput.value||0);
+      const meta = { symbol, amount, multiplier, direction, tp, sl, currency, assetName: els.symbolSelect.selectedOptions[0]?.textContent || symbol };
 
-      const meta = {
-        symbol, amount, multiplier, direction, tp, sl,
-        currency, assetName: els.symbolSelect.selectedOptions[0]?.textContent || symbol
-      };
-
-      lastUserActionAt=Date.now();
       els.posStatus.textContent='Enviando proposal...';
 
-      const req={
-        proposal:1,
-        amount, basis:'stake',
-        contract_type: direction==='up' ? 'MULTUP' : 'MULTDOWN',
-        currency, symbol, multiplier,
-        passthrough: meta
-      };
+      const req={ proposal:1, amount, basis:'stake', contract_type: direction==='up' ? 'MULTUP' : 'MULTDOWN', currency, symbol, multiplier, passthrough: meta };
       if(tp>0 || sl>0){
         req.limit_order = {};
         if(tp>0) req.limit_order.take_profit = tp;
@@ -667,18 +611,23 @@
       if(ohlcSubId){ send({ forget:ohlcSubId }); ohlcSubId=null; }
       send({ ticks_history:symbol, adjust_start_time:1, count:300, end:'latest', style:'candles', granularity:currentGranularity });
       send({ ohlc:1, symbol, granularity:currentGranularity, subscribe:1 });
-      ws.addEventListener('message', function once(e){ try{ const d=JSON.parse(e.data);
-        if(d.msg_type==='ohlc'&&d.subscription&&d.subscription.id){ ohlcSubId=d.subscription.id; ws.removeEventListener('message',once);} }catch(err){} });
+      wsObj.addEventListener('message', function once(e){ try{ const d=JSON.parse(e.data);
+        if(d.msg_type==='ohlc'&&d.subscription&&d.subscription.id){ ohlcSubId=d.subscription.id; wsObj.removeEventListener('message',once);} }catch(err){} });
     }
 
     // ========= MERCADO =========
-    function checkMultipliersAvailability(symbol){ send({ contracts_for:symbol }); }
+    function checkMultipliersAvailability(symbol){
+      // Enquanto carrega, bloquear ações
+      els.multInput.disabled = true; els.upBtn.disabled = true; els.downBtn.disabled = true;
+      setMultiplierOptions([]); // limpa
+      send({ contracts_for:symbol });
+    }
 
     // ========= EVENTOS =========
     els.loginBtn.onclick=()=>{ window.location.href=OAUTH_URL; };
     els.logoutBtn.onclick=()=>{
       positions.clear(); els.positionsList.innerHTML=''; updatePosStatus();
-      if(ws&&ws.readyState===1) ws.close();
+      if(wsObj&&wsObj.readyState===1) wsObj.close();
       if(balanceSubId){ send({ forget:balanceSubId }); balanceSubId=null; }
       if(tickSubId){ send({ forget:tickSubId }); tickSubId=null; }
       if(ohlcSubId){ send({ forget:ohlcSubId }); ohlcSubId=null; }
@@ -688,7 +637,7 @@
       const opt=els.accountSelect.value; if(!opt) return;
       const tokens=getStoredTokens(); const chosen=tokens.find(t=>t.account===opt); if(!chosen) return;
       localStorage.setItem('POINT_SELECTED',JSON.stringify(chosen));
-      if(ws&&ws.readyState===1) authorize(chosen.token,chosen.account,chosen.currency); else connectWS();
+      if(wsObj&&wsObj.readyState===1) authorize(chosen.token,chosen.account,chosen.currency); else connectWS();
       setTimeout(()=>{ subscribeBalance(); },200);
     };
     els.refreshBalanceBtn.onclick=()=> send({ balance:1 });
@@ -697,8 +646,8 @@
       subscribeTicks(sym); loadCandles(sym,currentGranularity); checkMultipliersAvailability(sym);
     };
     els.tfSelect.onchange=(e)=>{ loadCandles(els.symbolSelect.value, Number(e.target.value||60)); };
-    els.upBtn.onclick=()=>{ lastClickedDirection='up'; placeMultiplier('up'); };
-    els.downBtn.onclick=()=>{ lastClickedDirection='down'; placeMultiplier('down'); };
+    els.upBtn.onclick=()=>{ placeMultiplier('up'); };
+    els.downBtn.onclick=()=>{ placeMultiplier('down'); };
     document.getElementById('resetBtn').onclick=()=>{
       // remove cartões fechados
       for(const [cid,pos] of positions){ if(pos.closed){ positions.delete(cid); const el=document.getElementById(`pos-${cid}`); if(el) el.remove(); } }
@@ -707,7 +656,9 @@
       els.stakeInput.value = 10; els.tpInput.value = ''; els.slInput.value = '';
       // voltar ao padrão Volatility 100 (1s)
       const chosen = selectDefaultSymbol();
-      if(chosen){ subscribeTicks(chosen); loadCandles(chosen,60); checkMultipliersAvailability(chosen); }
+      if(chosen){
+        subscribeTicks(chosen); loadCandles(chosen,60); checkMultipliersAvailability(chosen);
+      }
       els.tfSelect.value = '60';
     };
 
@@ -722,16 +673,7 @@
       }else{ connectWS(); initChart(); }
     }
     function authorize(token,acct,cur){ currency=(cur||'USD').toUpperCase(); send({ authorize:token, passthrough:{acct} }); }
-    function subscribeOpenContract(contract_id){
-      send({ proposal_open_contract:1, contract_id, subscribe:1, passthrough:{contract_id} });
-      ws.addEventListener('message', function once(e){ const d=JSON.parse(e.data);
-        if(d.msg_type==='proposal_open_contract'&&d.subscription&&d.subscription.id){
-          const cid = d.proposal_open_contract.contract_id;
-          const pos = positions.get(cid); if(pos) pos.subId = d.subscription.id;
-          ws.removeEventListener('message',once);
-        }
-      });
-    }
+    function subscribeOpenContract(contract_id){ send({ proposal_open_contract:1, contract_id, subscribe:1 }); }
     function subscribeBalance(){ if(balanceSubId){ send({ forget:balanceSubId }); balanceSubId=null; } send({ balance:1, subscribe:1 }); els.refreshBalanceBtn.disabled=false; }
 
     extractAndBoot();
