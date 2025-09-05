@@ -7,57 +7,113 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/lightweight-charts@4.1.0/dist/lightweight-charts.standalone.production.js"></script>
   <style>
-    :root{ --bg:#0b1220; --card:#121a2b; --muted:#9fb0d0; --ok:#22c55e; --warn:#eab308; --err:#ef4444; --ink:#e6edf7; --soft:#1b2740 }
-    body{ background:var(--bg); color:var(--ink) }
-    .card{ background:var(--card); border:1px solid #1e2a46 }
-    .pill{ background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.08) }
-    .btn{ transition:transform .05s ease }
+    /* ===== THEME GOLD LUX ===== */
+    :root{
+      --bg:#0b0f18;
+      --card:#111726;
+      --muted:#c7cde0;
+      --ok:#19d188;
+      --warn:#ffcc55;
+      --err:#ef4444;
+      --ink:#f7f8fc;
+      --soft:#0f1524;
+
+      --gold:#d4af37;        /* gold principal */
+      --gold-2:#b78f2e;      /* bordas/hover */
+      --gold-3:#8a6b1f;      /* profundeza */
+      --gold-soft:rgba(212,175,55,.18);
+      --gold-line:rgba(212,175,55,.35);
+    }
+
+    body{
+      color:var(--ink);
+      background:
+        radial-gradient(1200px 700px at 80% -20%, rgba(212,175,55,.08), transparent 60%),
+        radial-gradient(1200px 700px at 0% 120%, rgba(212,175,55,.06), transparent 60%),
+        linear-gradient(180deg, #0b0f18 0%, #0c1220 60%, #0a0f1d 100%);
+    }
+
+    .card{
+      background:linear-gradient(180deg, rgba(255,255,255,.02), rgba(255,255,255,.00));
+      border:1px solid var(--gold-line);
+      box-shadow:0 10px 24px rgba(0,0,0,.35), inset 0 0 0 1px rgba(255,255,255,.03);
+    }
+    .pill{
+      background:rgba(255,255,255,.04);
+      border:1px solid rgba(255,255,255,.08);
+    }
+    .btn{ transition:transform .05s ease, filter .2s ease; }
     .btn:active{ transform:translateY(1px) }
-    .glass{ backdrop-filter: blur(8px); background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06) }
+
+    .btn-gold{
+      background:linear-gradient(135deg, var(--gold-3) 0%, var(--gold-2) 38%, var(--gold) 100%);
+      color:#1a1300 !important;
+      border:1px solid rgba(0,0,0,.25);
+      box-shadow:0 6px 18px rgba(212,175,55,.28), inset 0 1px 0 rgba(255,255,255,.35);
+    }
+    .btn-gold:hover{ filter:brightness(1.06) saturate(1.05); }
+
+    .glass{
+      backdrop-filter: blur(10px);
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(212,175,55,.22);
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,.02);
+    }
+
     .grid-col{ display:grid; grid-template-columns:1fr 1fr; gap:.75rem }
     .layout{ display:grid; grid-template-columns:260px 1fr 300px; gap:12px }
     @media (max-width:1024px){ .layout{ grid-template-columns:1fr } }
     select:focus,select:active{ color:#000 !important } select option{ color:#000 }
-    #chartWrap{ height:480px; transition:height .2s ease } @media (max-width:1024px){ #chartWrap{ height:420px } }
-    .pl-green{ color:#22c55e !important } .pl-red{ color:#ef4444 !important }
+
+    #chartWrap{ height:480px; transition:height .2s ease }
+    @media (max-width:1024px){ #chartWrap{ height:420px } }
+
+    .pl-green{ color:#e5c558 !important } /* verde trocado por dourado para ganhos */
+    .pl-red{ color:#ef4444 !important }
 
     /* Painel Robô IA (drawer) */
     #aiPanel{
       position:fixed; right:16px; top:88px; bottom:16px; width:360px; max-width:92vw;
       transform: translateX(120%); transition: transform .25s ease; z-index:60;
+      background:linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.02));
+      border:1px solid var(--gold-line);
+      box-shadow:0 20px 40px rgba(0,0,0,.45), 0 0 0 1px rgba(255,255,255,.02) inset;
     }
     #aiPanel.open{ transform: translateX(0); }
 
     /* Separador fino */
-    .sep{ height:1px; background:#1e2a46; margin-top:.75rem; margin-bottom:.75rem; }
+    .sep{ height:1px; background:linear-gradient(90deg, transparent, var(--gold-line), transparent); margin:.75rem 0; }
 
-    /* Dropdown do menu */
-    .menu-card{ background:var(--card); border:1px solid #1e2a46; box-shadow:0 12px 30px rgba(0,0,0,.35) }
-    .tab-btn{ padding:.4rem .7rem; border-radius:.6rem; font-size:.85rem }
-    .tab-btn.active{ background:#1b2740; color:#e6edf7; border:1px solid #2a395d }
+    /* Menu dropdown */
+    .menu-card{ background:var(--card); border:1px solid var(--gold-line); box-shadow:0 12px 30px rgba(0,0,0,.35) }
+    .tab-btn{ padding:.4rem .7rem; border-radius:.6rem; font-size:.85rem; border:1px solid rgba(212,175,55,.25); color:var(--muted) }
+    .tab-btn.active{ background:var(--gold-soft); color:#f8f3e0; border-color:var(--gold-2) }
+
+    header{ background:linear-gradient(180deg, rgba(212,175,55,.10), rgba(212,175,55,.03)); }
+    .tag-soft{ background:rgba(212,175,55,.08); color:#eedaa0; border:1px solid var(--gold-line) }
   </style>
 </head>
 <body>
-  <header class="sticky top-0 z-50 border-b border-slate-800 bg-[color:var(--soft)]">
+  <header class="sticky top-0 z-50 border-b border-[color:var(--gold-line)]">
     <div class="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
       <div class="flex items-center gap-3">
-        <div class="w-9 h-9 rounded-xl bg-indigo-500/20 flex items-center justify-center"><span class="text-indigo-300 font-bold">P</span></div>
+        <div class="w-9 h-9 rounded-xl tag-soft flex items-center justify-center"><span class="font-bold">P</span></div>
         <div>
           <h1 class="text-lg font-semibold tracking-wide">POINT — Multipliers (Deriv)</h1>
-          <p class="text-xs text-slate-400">App ID: 98640 • OAuth + WebSocket</p>
+          <p class="text-xs text-slate-300">App ID: 98640 • OAuth + WebSocket</p>
         </div>
       </div>
       <div class="flex items-center gap-2 relative">
-        <button id="loginBtn" class="btn px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm">Conectar</button>
+        <button id="loginBtn" class="btn btn-gold px-4 py-2 rounded-xl text-sm">Conectar</button>
         <button id="logoutBtn" class="btn px-3 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-slate-100 text-sm hidden">Desconectar</button>
 
         <!-- Botão de afiliado -->
         <a href="https://track.deriv.com/_IbwR-HIUYbJ8zg8lBvFoLmNd7ZgqdRLk/1/" target="_blank" rel="noopener"
-           class="btn px-4 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white text-sm">Cadastre-se na Corretora Deriv</a>
+           class="btn btn-gold px-4 py-2 rounded-xl text-sm">Cadastre-se na Corretora Deriv</a>
 
         <!-- MENU à direita do botão de cadastro -->
         <div class="relative">
-          <button id="menuBtn" class="btn px-3 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-slate-100 text-sm">Menu ▾</button>
+          <button id="menuBtn" class="btn px-3 py-2 rounded-xl glass text-slate-100 text-sm">Menu ▾</button>
           <div id="menuDropdown" class="hidden absolute right-0 mt-2 w-[560px] rounded-xl p-3 menu-card">
             <!-- Abas -->
             <div class="flex gap-2 mb-3">
@@ -70,7 +126,7 @@
               <div class="text-sm text-slate-300">Cole o link do YouTube e clique em <b>Adicionar</b>. Selecione na lista para tocar.</div>
               <div class="flex gap-2">
                 <input id="ytUrlInput" class="pill flex-1 px-3 py-2 rounded-xl text-sm bg-transparent text-slate-200" placeholder="https://www.youtube.com/watch?v=..." />
-                <button id="ytAddBtn" class="btn px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm">Adicionar</button>
+                <button id="ytAddBtn" class="btn btn-gold px-3 py-2 rounded-xl text-sm">Adicionar</button>
               </div>
               <div class="grid grid-cols-3 gap-3">
                 <div class="col-span-2">
@@ -79,9 +135,7 @@
                   </div>
                 </div>
                 <div class="col-span-1">
-                  <div id="ytList" class="glass rounded-xl p-2 max-h-56 overflow-auto text-sm space-y-1">
-                    <!-- itens inseridos via JS -->
-                  </div>
+                  <div id="ytList" class="glass rounded-xl p-2 max-h-56 overflow-auto text-sm space-y-1"></div>
                 </div>
               </div>
             </div>
@@ -96,14 +150,13 @@
             <div id="tab-download" class="hidden space-y-3">
               <div class="text-sm text-slate-300">Arquivos para download:</div>
               <div class="grid grid-cols-2 gap-2">
-                <!-- sete botões de download (placeholders) -->
-                <a class="btn px-3 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white text-sm text-center" href="#" download>Arquivo 1</a>
-                <a class="btn px-3 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white text-sm text-center" href="#" download>Arquivo 2</a>
-                <a class="btn px-3 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white text-sm text-center" href="#" download>Arquivo 3</a>
-                <a class="btn px-3 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white text-sm text-center" href="#" download>Arquivo 4</a>
-                <a class="btn px-3 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white text-sm text-center" href="#" download>Arquivo 5</a>
-                <a class="btn px-3 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white text-sm text-center" href="#" download>Arquivo 6</a>
-                <a class="btn px-3 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white text-sm text-center col-span-2" href="#" download>Arquivo 7</a>
+                <a class="btn btn-gold px-3 py-2 rounded-xl text-sm text-center" href="#" download>Arquivo 1</a>
+                <a class="btn btn-gold px-3 py-2 rounded-xl text-sm text-center" href="#" download>Arquivo 2</a>
+                <a class="btn btn-gold px-3 py-2 rounded-xl text-sm text-center" href="#" download>Arquivo 3</a>
+                <a class="btn btn-gold px-3 py-2 rounded-xl text-sm text-center" href="#" download>Arquivo 4</a>
+                <a class="btn btn-gold px-3 py-2 rounded-xl text-sm text-center" href="#" download>Arquivo 5</a>
+                <a class="btn btn-gold px-3 py-2 rounded-xl text-sm text-center" href="#" download>Arquivo 6</a>
+                <a class="btn btn-gold px-3 py-2 rounded-xl text-sm text-center col-span-2" href="#" download>Arquivo 7</a>
               </div>
             </div>
           </div>
@@ -118,19 +171,19 @@
     <section class="card rounded-2xl p-4">
       <div class="flex flex-wrap items-center gap-3 justify-between">
         <div class="flex items-center gap-3">
-          <div class="w-10 h-10 rounded-2xl bg-emerald-500/15 flex items-center justify-center"><span class="text-emerald-300">●</span></div>
+          <div class="w-10 h-10 rounded-2xl tag-soft flex items-center justify-center"><span>●</span></div>
           <div>
-            <div id="connStatus" class="text-sm text-slate-300">Desconectado</div>
+            <div id="connStatus" class="text-sm text-slate-200">Desconectado</div>
             <div id="loginNote" class="text-xs text-slate-400">Clique em <b>Conectar</b> para iniciar o OAuth.</div>
           </div>
         </div>
         <div class="flex flex-col gap-2">
           <div class="flex items-center gap-3">
-            <label class="text-sm text-slate-300">Conta:</label>
+            <label class="text-sm text-slate-200">Conta:</label>
             <select id="accountSelect" class="pill px-3 py-2 rounded-xl text-sm text-slate-200 bg-transparent" disabled></select>
           </div>
           <div class="flex items-center gap-3">
-            <label class="text-sm text-slate-300">Saldo:</label>
+            <label class="text-sm text-slate-200">Saldo:</label>
             <input id="balanceInput" class="pill px-3 py-2 rounded-xl text-sm bg-transparent text-slate-200 w-40 text-right" placeholder="—" disabled />
           </div>
         </div>
@@ -142,8 +195,8 @@
       <!-- ESQUERDA: POSIÇÕES -->
       <section class="card rounded-2xl p-4">
         <div class="flex items-center justify-between mb-3">
-          <div class="text-xs uppercase tracking-wide text-slate-400">Posição</div>
-          <button id="resetBtn" class="btn px-2 py-1 rounded-lg bg-slate-700 hover:bg-slate-600 text-xs">Reset histórico</button>
+          <div class="text-xs uppercase tracking-wide text-slate-300">Posição</div>
+          <button id="resetBtn" class="btn glass px-2 py-1 rounded-lg text-xs">Reset histórico</button>
         </div>
         <div id="posStatus" class="text-sm">Nenhuma posição aberta.</div>
         <div id="positionsList" class="space-y-3 mt-3 max-h-[520px] overflow-auto pr-2"></div>
@@ -152,9 +205,9 @@
       <!-- CENTRO: GRÁFICO -->
       <section class="card rounded-2xl p-4">
         <div class="flex items-center justify-between mb-3">
-          <div class="text-xs uppercase tracking-wide text-slate-400">Gráfico de Tendências (Velas)</div>
+          <div class="text-xs uppercase tracking-wide text-slate-300">Gráfico de Tendências (Velas)</div>
           <div class="flex items-center gap-2">
-            <label for="tfSelect" class="text-xs text-slate-400">Timeframe</label>
+            <label for="tfSelect" class="text-xs text-slate-300">Timeframe</label>
             <select id="tfSelect" class="pill px-2 py-1 rounded-lg text-sm bg-transparent text-slate-200" disabled>
               <option value="60" selected>1m</option>
               <option value="120">2m</option>
@@ -183,10 +236,10 @@
       <!-- DIREITA: MERCADO + AÇÃO -->
       <div class="flex flex-col gap-3">
         <section class="card rounded-2xl p-4">
-          <div class="text-xs uppercase tracking-wide text-slate-400 mb-3">Mercado</div>
+          <div class="text-xs uppercase tracking-wide text-slate-300 mb-3">Mercado</div>
           <div class="space-y-3">
             <div>
-              <label class="text-sm text-slate-300">Símbolo</label>
+              <label class="text-sm text-slate-200">Símbolo</label>
               <div class="flex items-center gap-2">
                 <select id="symbolSelect" class="pill w-full px-3 py-2 rounded-xl text-sm bg-transparent text-slate-200" disabled>
                   <option>— carregando —</option>
@@ -196,21 +249,21 @@
             </div>
             <div class="grid-col">
               <div>
-                <label class="text-sm text-slate-300">Stake</label>
+                <label class="text-sm text-slate-200">Stake</label>
                 <input id="stakeInput" type="number" min="1" step="1" value="10" class="pill w-full px-3 py-2 rounded-xl bg-transparent text-slate-200" disabled />
               </div>
               <div>
-                <label class="text-sm text-slate-300">Multiplier</label>
+                <label class="text-sm text-slate-200">Multiplier</label>
                 <select id="multInput" class="pill w-full px-3 py-2 rounded-xl bg-transparent text-slate-200" disabled></select>
               </div>
             </div>
             <div class="grid-col">
               <div>
-                <label class="text-sm text-slate-300">Take Profit (opcional)</label>
+                <label class="text-sm text-slate-200">Take Profit (opcional)</label>
                 <input id="tpInput" type="number" min="1" step="1" placeholder="ex: 150" class="pill w-full px-3 py-2 rounded-xl bg-transparent text-slate-200" disabled />
               </div>
               <div>
-                <label class="text-sm text-slate-300">Stop Loss (opcional)</label>
+                <label class="text-sm text-slate-200">Stop Loss (opcional)</label>
                 <input id="slInput" type="number" min="1" step="1" placeholder="ex: 130" class="pill w-full px-3 py-2 rounded-xl bg-transparent text-slate-200" disabled />
               </div>
             </div>
@@ -218,7 +271,7 @@
         </section>
 
         <section class="card rounded-2xl p-4">
-          <div class="text-xs uppercase tracking-wide text-slate-400 mb-3">Ação</div>
+          <div class="text-xs uppercase tracking-wide text-slate-300 mb-3">Ação</div>
           <div class="flex gap-3">
             <button id="upBtn" class="btn flex-1 px-4 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-40" disabled>UP (MULTUP)</button>
             <button id="downBtn" class="btn flex-1 px-4 py-3 rounded-xl bg-rose-600 hover:bg-rose-500 text-white disabled:opacity-40" disabled>DOWN (MULTDOWN)</button>
@@ -226,18 +279,17 @@
 
           <div class="sep"></div>
 
-          <!-- NOVOS BOTÕES IA (abaixo dos UP/DOWN) -->
+          <!-- Robô IA (apenas este, IA Auto removido) -->
           <div class="flex gap-3">
-            <button id="aiOpenBtn" class="btn flex-1 px-4 py-3 rounded-xl bg-sky-700 hover:bg-sky-600 text-white disabled:opacity-40" disabled>
+            <button id="aiOpenBtn" class="btn btn-gold flex-1 px-4 py-3 rounded-xl text-sm disabled:opacity-40" disabled>
               <span class="inline-flex items-center gap-2">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M12 2v3M7 22h10M4 19V9a4 4 0 0 1 4-4h8a4 4 0 0 1 4 4v10" stroke="#fff" stroke-width="1.5"/><rect x="6" y="11" width="4" height="4" rx="1" stroke="#fff" stroke-width="1.5"/><rect x="14" y="11" width="4" height="4" rx="1" stroke="#fff" stroke-width="1.5"/></svg>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M12 2v3M7 22h10M4 19V9a4 4 0 0 1 4-4h8a4 4 0 0 1 4 4v10" stroke="#1a1300" stroke-width="1.5"/><rect x="6" y="11" width="4" height="4" rx="1" stroke="#1a1300" stroke-width="1.5"/><rect x="14" y="11" width="4" height="4" rx="1" stroke="#1a1300" stroke-width="1.5"/></svg>
                 Robô IA
               </span>
             </button>
-            <button id="aiAutoBtn" class="btn flex-1 px-4 py-3 rounded-xl bg-purple-700 hover:bg-purple-600 text-white disabled:opacity-40" disabled>IA (Auto)</button>
           </div>
 
-          <div class="text-xs text-slate-400 mt-2">
+          <div class="text-xs text-slate-300 mt-2">
             Multipliers: perdas limitadas ao <b>stake</b>; podes fechar a qualquer momento; TP/SL suportados.
           </div>
         </section>
@@ -246,35 +298,35 @@
   </main>
 
   <!-- Painel Robô IA -->
-  <div id="aiPanel" class="card rounded-2xl p-4 shadow-xl">
+  <div id="aiPanel" class="rounded-2xl p-4">
     <div class="flex items-center justify-between mb-3">
       <div class="flex items-center gap-2">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M12 2v3M7 22h10M4 19V9a4 4 0 0 1 4-4h8a4 4 0 0 1 4 4v10" stroke="#9fb0d0" stroke-width="1.5"/><rect x="6" y="11" width="4" height="4" rx="1" stroke="#9fb0d0" stroke-width="1.5"/><rect x="14" y="11" width="4" height="4" rx="1" stroke="#9fb0d0" stroke-width="1.5"/></svg>
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M12 2v3M7 22h10M4 19V9a4 4 0 0 1 4-4h8a4 4 0 0 1 4 4v10" stroke="#d4af37" stroke-width="1.5"/><rect x="6" y="11" width="4" height="4" rx="1" stroke="#d4af37" stroke-width="1.5"/><rect x="14" y="11" width="4" height="4" rx="1" stroke="#d4af37" stroke-width="1.5"/></svg>
         <div class="text-sm font-semibold">Robô IA — Probabilidades</div>
       </div>
-      <button id="aiCloseBtn" class="btn px-2 py-1 rounded-lg bg-slate-700 hover:bg-slate-600 text-xs">Fechar</button>
+      <button id="aiCloseBtn" class="btn glass px-2 py-1 rounded-lg text-xs">Fechar</button>
     </div>
 
     <div class="glass rounded-xl p-3 mb-3">
       <div class="flex items-baseline justify-between">
-        <div class="text-xs text-slate-400">Sinal recomendado</div>
-        <div id="aiUpdatedAt" class="text-[10px] text-slate-500">—</div>
+        <div class="text-xs text-slate-300">Sinal recomendado</div>
+        <div id="aiUpdatedAt" class="text-[10px] text-slate-400">—</div>
       </div>
       <div class="mt-1 flex items-center justify-between">
         <div id="aiSignal" class="text-lg font-semibold">—</div>
-        <div id="aiConfidence" class="text-sm text-slate-300">Confiança: —%</div>
+        <div id="aiConfidence" class="text-sm text-slate-200">Confiança: —%</div>
       </div>
-      <div class="mt-1 text-xs text-slate-400">Permanência sugerida</div>
+      <div class="mt-1 text-xs text-slate-300">Permanência sugerida</div>
       <div id="aiHold" class="text-sm">—</div>
-      <div class="mt-2 text-xs text-slate-400">Resumo</div>
+      <div class="mt-2 text-xs text-slate-300">Resumo</div>
       <div id="aiSummary" class="text-sm">—</div>
-      <button id="aiExecuteBtn" class="btn mt-3 w-full px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm">Executar sinal agora</button>
+      <button id="aiExecuteBtn" class="btn btn-gold mt-3 w-full px-3 py-2 rounded-lg text-sm">Executar sinal agora</button>
     </div>
 
     <div class="space-y-2">
-      <div class="text-xs uppercase tracking-wide text-slate-400">Indicadores</div>
+      <div class="text-xs uppercase tracking-wide text-slate-300">Indicadores</div>
       <div id="aiIndicators" class="grid grid-cols-2 gap-2 text-sm"></div>
-      <div class="text-[11px] text-slate-500 mt-2">Nota: ferramenta experimental. Utilize gestão de risco.</div>
+      <div class="text-[11px] text-slate-400 mt-2">Nota: ferramenta experimental. Utilize gestão de risco.</div>
     </div>
   </div>
 
@@ -339,7 +391,7 @@
       posStatus:document.getElementById('posStatus'), positionsList:document.getElementById('positionsList'), resetBtn:document.getElementById('resetBtn'),
 
       // IA
-      aiOpenBtn:document.getElementById('aiOpenBtn'), aiAutoBtn:document.getElementById('aiAutoBtn'),
+      aiOpenBtn:document.getElementById('aiOpenBtn'),
       aiPanel:document.getElementById('aiPanel'), aiCloseBtn:document.getElementById('aiCloseBtn'),
       aiSignal:document.getElementById('aiSignal'), aiConfidence:document.getElementById('aiConfidence'),
       aiIndicators:document.getElementById('aiIndicators'), aiUpdatedAt:document.getElementById('aiUpdatedAt'),
@@ -359,14 +411,13 @@
     function setConnectedUI(on){ els.connStatus.textContent = on ? 'Conectado (WebSocket ativo)' : 'Desconectado'; }
     function setAuthUI(on){
       authorized=!!on; const dis=!on;
-      [els.accountSelect,els.symbolSelect,els.stakeInput,els.multInput,els.tpInput,els.slInput,els.upBtn,els.downBtn,els.tfSelect,els.aiOpenBtn,els.aiAutoBtn]
+      [els.accountSelect,els.symbolSelect,els.stakeInput,els.multInput,els.tpInput,els.slInput,els.upBtn,els.downBtn,els.tfSelect,els.aiOpenBtn]
         .forEach(el=>{ el.disabled=dis; });
       els.logoutBtn.classList.toggle('hidden',!on); els.loginBtn.classList.toggle('hidden',on);
       els.loginNote.textContent = on ? 'Autorizado. Escolhe a conta e o símbolo para negociar.' : 'Clique em Conectar para iniciar o OAuth.';
       if(dis){ els.balanceInput.value=''; els.balanceInput.placeholder='—'; }
     }
 
-    // Mensagens PT com prefixo “Caro Trader:”
     function translateError(msg){
       let m=String(msg||'');
       m = m.replace(/Your account balance \(([^)]+)\) is insufficient to buy this contract \(([^)]+)\)\./i, 'Saldo da sua conta ($1) é insuficiente para comprar este contrato ($2).');
@@ -380,7 +431,7 @@
       return m;
     }
     function showTraderMessage(text){
-      els.posStatus.innerHTML = `<span class="text-emerald-400">Caro Trader:</span> <span class="text-slate-200">${text}</span>`;
+      els.posStatus.innerHTML = `<span class="pl-green">Caro Trader:</span> <span class="text-slate-200">${text}</span>`;
     }
     function toast(msg,isErr=false){
       const raw = String(msg||'');
@@ -411,7 +462,7 @@
       b.classList.remove('hidden');
       b.textContent = available ? 'Multipliers: disponível' : 'Multipliers: indisponível';
       b.className = available
-        ? 'px-2 py-1 rounded-lg text-xs border bg-emerald-500/10 text-emerald-300 border-emerald-500/30'
+        ? 'px-2 py-1 rounded-lg text-xs border bg-[color:var(--gold-soft)] text-[#f3e3a7] border-[color:var(--gold-line)]'
         : 'px-2 py-1 rounded-lg text-xs border bg-rose-500/10 text-rose-300 border-rose-500/30';
     }
 
@@ -476,7 +527,6 @@
       ws.send(JSON.stringify(msg));
     }
 
-    // ========= SUBSCRIÇÕES: helpers =========
     function forgetAllSubscriptions(){
       if(tickSubId){ send({ forget: tickSubId }); tickSubId=null; }
       if(ohlcSubId){ send({ forget: ohlcSubId }); ohlcSubId=null; }
@@ -627,7 +677,7 @@
           const isUp = poc.contract_type && poc.contract_type.includes('UP');
           pos.priceLine = candleSeries.createPriceLine({
             price: Number(poc.entry_tick),
-            color: isUp ? '#22c55e' : '#ef4444',
+            color: isUp ? '#e5c558' : '#ef4444',
             lineWidth:1, lineStyle:LightweightCharts.LineStyle.Solid,
             axisLabelVisible:true, title: isUp ? '▲' : '▼'
           });
@@ -676,12 +726,9 @@
       }
     }
 
-    // ========= Indicadores (IA) =========
+    // ========= Indicadores & IA =========
     function sma(vals, p){ if(vals.length<p) return []; const out=[]; let s=0; for(let i=0;i<vals.length;i++){ s+=vals[i]; if(i>=p) s-=vals[i-p]; if(i>=p-1) out.push(s/p); } return out; }
-    function ema(arr, period, accessor=(x)=>x){
-      const k = 2/(period+1); let emaPrev;
-      return arr.map((v,i)=>{ const val = accessor(v); if(i===0){ emaPrev = val; return val; } emaPrev = val*k + emaPrev*(1-k); return emaPrev; });
-    }
+    function ema(arr, period, accessor=(x)=>x){ const k = 2/(period+1); let emaPrev; return arr.map((v,i)=>{ const val = accessor(v); if(i===0){ emaPrev = val; return val; } emaPrev = val*k + emaPrev*(1-k); return emaPrev; }); }
     function rsi(arr, period=14, accessor=(x)=>x){
       if(arr.length<period+1) return [];
       let gains=0, losses=0;
@@ -816,7 +863,6 @@
       return out;
     }
 
-    // Score IA
     function computeAI(bars){
       if(!bars || bars.length<60) return {signal:'Neutro', conf:0.0, holdSec:0, details:{}, summary:'Dados insuficientes.'};
 
@@ -939,14 +985,14 @@
 
       const d = res.details || {};
       els.aiIndicators.innerHTML = `
-        <div class="glass rounded-lg p-2"><div class="text-[11px] text-slate-400">EMA9/21/50</div><div>${(d.ema9||0).toFixed(5)} / ${(d.ema21||0).toFixed(5)} / ${(d.ema50||0).toFixed(5)}</div></div>
-        <div class="glass rounded-lg p-2"><div class="text-[11px] text-slate-400">RSI(14)</div><div>${(d.rsi||0).toFixed(2)}</div></div>
-        <div class="glass rounded-lg p-2"><div class="text-[11px] text-slate-400">MACD / Sinal / Hist</div><div>${(d.macd||0).toFixed(5)} / ${(d.macdSig||0).toFixed(5)} / ${(d.macdHist||0).toFixed(5)}</div></div>
-        <div class="glass rounded-lg p-2"><div class="text-[11px] text-slate-400">ATR(14)</div><div>${(d.atr||0).toFixed(5)}</div></div>
-        <div class="glass rounded-lg p-2"><div class="text-[11px] text-slate-400">ADX(14) / +DI / −DI</div><div>${(d.adx||0).toFixed(2)} / ${(d.plusDI||0).toFixed(2)} / ${(d.minusDI||0).toFixed(2)}</div></div>
-        <div class="glass rounded-lg p-2"><div class="text-[11px] text-slate-400">%K / %D (Stoch)</div><div>${(d.stochK||0).toFixed(2)} / ${(d.stochD||0).toFixed(2)}</div></div>
-        <div class="glass rounded-lg p-2"><div class="text-[11px] text-slate-400">BB Mid/Up/Dn</div><div>${(d.bbMid||0).toFixed(5)} / ${(d.bbUp||0).toFixed(5)} / ${(d.bbDn||0).toFixed(5)}</div></div>
-        <div class="glass rounded-lg p-2"><div class="text-[11px] text-slate-400">Supertrend</div><div>${d.stDir===1?'Alta':'Baixa'} @ ${(d.stVal||0).toFixed(5)}</div></div>
+        <div class="glass rounded-lg p-2"><div class="text-[11px] text-slate-300">EMA9/21/50</div><div>${(d.ema9||0).toFixed(5)} / ${(d.ema21||0).toFixed(5)} / ${(d.ema50||0).toFixed(5)}</div></div>
+        <div class="glass rounded-lg p-2"><div class="text-[11px] text-slate-300">RSI(14)</div><div>${(d.rsi||0).toFixed(2)}</div></div>
+        <div class="glass rounded-lg p-2"><div class="text-[11px] text-slate-300">MACD / Sinal / Hist</div><div>${(d.macd||0).toFixed(5)} / ${(d.macdSig||0).toFixed(5)} / ${(d.macdHist||0).toFixed(5)}</div></div>
+        <div class="glass rounded-lg p-2"><div class="text-[11px] text-slate-300">ATR(14)</div><div>${(d.atr||0).toFixed(5)}</div></div>
+        <div class="glass rounded-lg p-2"><div class="text-[11px] text-slate-300">ADX(14) / +DI / −DI</div><div>${(d.adx||0).toFixed(2)} / ${(d.plusDI||0).toFixed(2)} / ${(d.minusDI||0).toFixed(2)}</div></div>
+        <div class="glass rounded-lg p-2"><div class="text-[11px] text-slate-300">%K / %D (Stoch)</div><div>${(d.stochK||0).toFixed(2)} / ${(d.stochD||0).toFixed(2)}</div></div>
+        <div class="glass rounded-lg p-2"><div class="text-[11px] text-slate-300">BB Mid/Up/Dn</div><div>${(d.bbMid||0).toFixed(5)} / ${(d.bbUp||0).toFixed(5)} / ${(d.bbDn||0).toFixed(5)}</div></div>
+        <div class="glass rounded-lg p-2"><div class="text-[11px] text-slate-300">Supertrend</div><div>${d.stDir===1?'Alta':'Baixa'} @ ${(d.stVal||0).toFixed(5)}</div></div>
       `;
     }
 
@@ -956,41 +1002,6 @@
       if(res.signal==='UP') showTraderMessage(`sugerimos **UP** com confiança ${res.conf}% · permanecer ~ ${Math.round((res.holdSec||0)/60)} min.`);
       else if(res.signal==='DOWN') showTraderMessage(`sugerimos **DOWN** com confiança ${res.conf}% · permanecer ~ ${Math.round((res.holdSec||0)/60)} min.`);
       else showTraderMessage('Condições neutras. Aguarde melhor confluência ou altere o timeframe.');
-    }
-
-    let lastAutoAt = 0;
-    function executeAIAuto(){
-      const now = Date.now();
-      if(now - lastAutoAt < 8000){ showTraderMessage('aguarde alguns segundos antes de nova execução automática.'); return; }
-      const res = maybeUpdateAI(true);
-      if(!res){ showTraderMessage('dados insuficientes para analisar.'); return; }
-
-      const strongConf = res.conf >= 75;
-      const d = res.details || {};
-      const adxOK = (d.adx||0) >= 22;
-      const rsiOK = (d.rsi||50) >= 35 && (d.rsi||50) <= 65;
-      const stochOK = (d.stochK!=null && d.stochD!=null) ? Math.abs(d.stochK - d.stochD) <= 30 : true;
-      const notNearBBEdge = !((d.bbUp && d.close>d.bbUp*0.998) || (d.bbDn && d.close<d.bbDn*1.002));
-      const supertrendAgree = (res.signal==='UP' && d.stDir===1) || (res.signal==='DOWN' && d.stDir===-1);
-
-      if(res.signal==='Neutro' || !strongConf || !adxOK || !rsiOK || !stochOK || !notNearBBEdge || !supertrendAgree){
-        showTraderMessage('Cenário ainda conservador/indefinido para auto-execução. Ajuste timeframe ou aguarde nova vela.');
-        return;
-      }
-
-      const symbol=els.symbolSelect.value;
-      const multiplier=Number(els.multInput.value||0);
-      const allowed = allowedBySymbol.get(symbol) || currentAllowedMultipliers || [];
-      if(Array.isArray(allowed) && allowed.length && !allowed.includes(multiplier)){
-        const list = allowed.map(v=>'x'+v).join(', ');
-        showTraderMessage(`o multiplicador x${multiplier} não é suportado para este mercado. Suportados: ${list}.`);
-        updateMultiplierHighlights();
-        return;
-      }
-
-      lastAutoAt = now;
-      if(res.signal==='UP') placeMultiplier('up');
-      else if(res.signal==='DOWN') placeMultiplier('down');
     }
 
     // ========= API =========
@@ -1047,7 +1058,7 @@
     function createPositionCard(contract_id, meta){
       const wrap = document.createElement('div');
       wrap.id = `pos-${contract_id}`;
-      wrap.className = 'rounded-xl border border-slate-800 p-3 space-y-2';
+      wrap.className = 'rounded-xl border border-[color:var(--gold-line)] p-3 space-y-2';
 
       const top = document.createElement('div');
       top.className = 'flex items-center justify-between';
@@ -1055,25 +1066,25 @@
       title.className = 'text-sm';
       title.textContent = `${meta.assetName || meta.symbol} · ${meta.direction==='up'?'Up':'Down'} x${meta.multiplier}`;
       const status = document.createElement('div');
-      status.className = 'text-xs text-slate-400';
+      status.className = 'text-xs text-slate-300';
       status.textContent = 'Aberto';
       top.appendChild(title); top.appendChild(status);
 
       const grid = document.createElement('div');
       grid.className = 'grid grid-cols-2 gap-x-3 gap-y-1 text-sm';
       grid.innerHTML = `
-        <div class="text-slate-400">Custos do contrato</div><div class="text-slate-200" id="v_cost">${meta.amount.toFixed(2)} ${meta.currency}</div>
-        <div class="text-slate-400">Valor do contrato</div><div class="text-slate-200" id="v_value">${meta.amount.toFixed(2)} ${meta.currency}</div>
-        <div class="text-slate-400">Entrada</div><div class="text-slate-200" id="v_entry">${meta.amount.toFixed(2)} ${meta.currency}</div>
-        <div class="text-slate-400">Take profit</div><div class="text-slate-200" id="v_tp">${meta.tp>0?meta.tp.toFixed(2):'-'}</div>
-        <div class="text-slate-400">Stop loss</div><div class="text-slate-200" id="v_sl">${meta.sl>0?meta.sl.toFixed(2):'-'}</div>
-        <div class="text-slate-400">Lucro/Prejuízo</div><div class="text-slate-200 font-semibold" id="v_pl">0.00 ${meta.currency}</div>
+        <div class="text-slate-300">Custos do contrato</div><div class="text-slate-100" id="v_cost">${meta.amount.toFixed(2)} ${meta.currency}</div>
+        <div class="text-slate-300">Valor do contrato</div><div class="text-slate-100" id="v_value">${meta.amount.toFixed(2)} ${meta.currency}</div>
+        <div class="text-slate-300">Entrada</div><div class="text-slate-100" id="v_entry">${meta.amount.toFixed(2)} ${meta.currency}</div>
+        <div class="text-slate-300">Take profit</div><div class="text-slate-100" id="v_tp">${meta.tp>0?meta.tp.toFixed(2):'-'}</div>
+        <div class="text-slate-300">Stop loss</div><div class="text-slate-100" id="v_sl">${meta.sl>0?meta.sl.toFixed(2):'-'}</div>
+        <div class="text-slate-300">Lucro/Prejuízo</div><div class="text-slate-100 font-semibold" id="v_pl">0.00 ${meta.currency}</div>
       `;
 
       const actions = document.createElement('div');
       actions.className = 'flex justify-end';
       const btn = document.createElement('button');
-      btn.className = 'btn px-3 py-1 rounded-lg bg-slate-700 hover:bg-slate-600 text-xs';
+      btn.className = 'btn glass px-3 py-1 rounded-lg text-xs';
       btn.textContent = 'Fechar';
       actions.appendChild(btn);
 
@@ -1131,17 +1142,21 @@
       if(lwChart||!els.chartWrap) return;
       lwChart=LightweightCharts.createChart(els.chartWrap,{
         autoSize:true,
-        layout:{ background:{ type:'solid', color:'transparent' }, textColor:'#9fb0d0' },
-        grid:{ vertLines:{ color:'#1e2a46' }, horzLines:{ color:'#1e2a46' } },
+        layout:{ background:{ type:'solid', color:'transparent' }, textColor:'#cdd6f4' },
+        grid:{ vertLines:{ color:'rgba(212,175,55,.18)' }, horzLines:{ color:'rgba(212,175,55,.18)' } },
         crosshair:{ mode:LightweightCharts.CrosshairMode.Magnet },
-        rightPriceScale:{ borderColor:'#1e2a46' },
-        timeScale:{ borderColor:'#1e2a46', timeVisible:true, secondsVisible:false, rightOffset:3 }
+        rightPriceScale:{ borderColor:'rgba(212,175,55,.25)' },
+        timeScale:{ borderColor:'rgba(212,175,55,.25)', timeVisible:true, secondsVisible:false, rightOffset:3 }
       });
-      candleSeries=lwChart.addCandlestickSeries({ upColor:'#22c55e', downColor:'#ef4444', wickUpColor:'#22c55e', wickDownColor:'#ef4444', borderVisible:false });
+      candleSeries=lwChart.addCandlestickSeries({
+        upColor:'#e5c558', downColor:'#ef4444',
+        wickUpColor:'#e5c558', wickDownColor:'#ef4444',
+        borderVisible:false
+      });
       new ResizeObserver(()=>{ lwChart.applyOptions({}); }).observe(els.chartWrap);
     }
 
-    // ========= CONTA: comportamento do select (Demo/Real fechado) =========
+    // ========= CONTA (select com rótulo Demo/Real quando fechado) =========
     function isDemoLogin(id){ return /VRTC/i.test(id||''); }
     function buildAccountClosedState(){
       const sel = els.accountSelect;
@@ -1225,7 +1240,6 @@
     els.aiOpenBtn.onclick = ()=>{ els.aiPanel.classList.add('open'); maybeUpdateAI(true); };
     els.aiCloseBtn.onclick = ()=> els.aiPanel.classList.remove('open');
     els.aiExecuteBtn.onclick = refreshAISignal;
-    els.aiAutoBtn.onclick = executeAIAuto;
 
     // MENU dropdown
     els.menuBtn.addEventListener('click', (e)=>{
