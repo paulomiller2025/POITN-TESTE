@@ -20,17 +20,14 @@
     select:focus,select:active{ color:#000 !important } select option{ color:#000 }
     #chartWrap{ height:480px; transition:height .2s ease } @media (max-width:1024px){ #chartWrap{ height:420px } }
     .pl-green{ color:#22c55e !important } .pl-red{ color:#ef4444 !important }
+    .sep{ height:1px; background:#1e2a46; margin-top:.75rem; margin-bottom:.75rem; }
 
     /* Painel Robô IA (drawer) */
     #aiPanel{
       position:fixed; right:16px; top:88px; bottom:16px; width:360px; max-width:92vw;
-      transform: translateX(120%); transition: transform .25s ease;
-      z-index:60;
+      transform: translateX(120%); transition: transform .25s ease; z-index:60;
     }
     #aiPanel.open{ transform: translateX(0); }
-
-    /* Separador fino */
-    .sep{ height:1px; background:#1e2a46; margin-top:.75rem; margin-bottom:.75rem; }
   </style>
 </head>
 <body>
@@ -46,7 +43,6 @@
       <div class="flex items-center gap-2">
         <button id="loginBtn" class="btn px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm">Conectar</button>
         <button id="logoutBtn" class="btn px-3 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-slate-100 text-sm hidden">Desconectar</button>
-        <!-- Botão de afiliado (sempre visível e sempre à direita) -->
         <a href="https://track.deriv.com/_IbwR-HIUYbJ8zg8lBvFoLmNd7ZgqdRLk/1/" target="_blank" rel="noopener"
            class="btn px-4 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white text-sm">Cadastre-se na Corretora Deriv</a>
       </div>
@@ -67,13 +63,12 @@
         <div class="flex flex-col gap-2">
           <div class="flex items-center gap-3">
             <label class="text-sm text-slate-300">Conta:</label>
+            <!-- Select com comportamento customizado -->
             <select id="accountSelect" class="pill px-3 py-2 rounded-xl text-sm text-slate-200 bg-transparent" disabled></select>
-            <button id="useAccountBtn" class="btn px-3 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-sm disabled:opacity-50" disabled>Usar conta</button>
           </div>
           <div class="flex items-center gap-3">
             <label class="text-sm text-slate-300">Saldo:</label>
             <input id="balanceInput" class="pill px-3 py-2 rounded-xl text-sm bg-transparent text-slate-200 w-40 text-right" placeholder="—" disabled />
-            <button id="refreshBalanceBtn" class="btn px-3 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-sm disabled:opacity-50" disabled>Atualizar</button>
           </div>
         </div>
       </div>
@@ -114,7 +109,6 @@
           </div>
         </div>
         <div id="chartWrap" class="glass rounded-xl"></div>
-        <!-- Preço em tempo real (oculto) -->
         <div class="glass rounded-xl p-4 mt-3 hidden">
           <div id="tickSymbol" class="text-sm text-slate-400">—</div>
           <div class="text-3xl font-semibold mt-1" id="tickPrice">—</div>
@@ -168,7 +162,7 @@
 
           <div class="sep"></div>
 
-          <!-- NOVOS BOTÕES IA (abaixo dos UP/DOWN) -->
+          <!-- Robô IA + IA Auto -->
           <div class="flex gap-3">
             <button id="aiOpenBtn" class="btn flex-1 px-4 py-3 rounded-xl bg-sky-700 hover:bg-sky-600 text-white disabled:opacity-40" disabled>
               <span class="inline-flex items-center gap-2">
@@ -210,7 +204,6 @@
       <div id="aiHold" class="text-sm">—</div>
       <div class="mt-2 text-xs text-slate-400">Resumo</div>
       <div id="aiSummary" class="text-sm">—</div>
-      <!-- Agora apenas atualiza análise; não abre contrato -->
       <button id="aiExecuteBtn" class="btn mt-3 w-full px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm">Executar sinal agora</button>
     </div>
 
@@ -230,22 +223,29 @@
     const ALL_MULTS = [10,15,20,40,50,80,100,150,200,250,300,350,400,450,500,700,800,1000,1300,1500,1600,2000,2500,3200];
     const DEFAULT_SYMBOL_REGEX = /Volatility 100 \(1s\)/i;
 
+    // IA thresholds
+    const SIGNAL_THRESHOLD = 0.55;    // Robô IA: mais assertivo nas recomendações
+    const AUTO_CONF_MIN    = 80;      // IA Auto: confiança mínima 80%
+    const AUTO_ADX_MIN     = 25;      // IA Auto: ADX mínimo 25
+    const AUTO_COOLDOWN_MS = 12000;   // IA Auto: cooldown 12s
+    const BB_EDGE_UP = 0.998;         // Evitar entrada muito perto da BB superior
+    const BB_EDGE_DN = 1.002;         // Evitar entrada muito perto da BB inferior
+
     // ========= ESTADO =========
     let ws=null, authorized=false, loginId=null, currency='USD';
     let tickSubId=null, ohlcSubId=null, balanceSubId=null;
     let lwChart=null, candleSeries=null, currentSymbol=null, currentGranularity=60, liveBar=null;
 
     let activeTicksSymbol = null;
-    let activeOHLCKey = null; // `${symbol}|${granularity}`
+    let activeOHLCKey = null;
 
     const positions = new Map();
     const allowedBySymbol = new Map();
     let currentAllowedMultipliers = [];
 
-    // cache de barras por símbolo|granularity
-    const barsCache = new Map(); // key -> [{time,open,high,low,close}, ...]
+    const barsCache = new Map();
 
-    // ÁUDIO (cash ao lucrar)
+    // ÁUDIO
     let audioCtx = null;
     function playCash(){ try{
       if(!audioCtx) audioCtx = new (window.AudioContext||window.webkitAudioContext)();
@@ -263,16 +263,15 @@
     const els = {
       loginBtn:document.getElementById('loginBtn'), logoutBtn:document.getElementById('logoutBtn'),
       connStatus:document.getElementById('connStatus'), loginNote:document.getElementById('loginNote'),
-      accountSelect:document.getElementById('accountSelect'), useAccountBtn:document.getElementById('useAccountBtn'),
+      accountSelect:document.getElementById('accountSelect'),
       symbolSelect:document.getElementById('symbolSelect'), stakeInput:document.getElementById('stakeInput'),
       multInput:document.getElementById('multInput'), tpInput:document.getElementById('tpInput'), slInput:document.getElementById('slInput'),
       upBtn:document.getElementById('upBtn'), downBtn:document.getElementById('downBtn'),
       tickSymbol:document.getElementById('tickSymbol'), tickPrice:document.getElementById('tickPrice'), tickNote:document.getElementById('tickNote'),
-      balanceInput:document.getElementById('balanceInput'), refreshBalanceBtn:document.getElementById('refreshBalanceBtn'),
+      balanceInput:document.getElementById('balanceInput'),
       tfSelect:document.getElementById('tfSelect'), chartWrap:document.getElementById('chartWrap'), multBadge:document.getElementById('multBadge'),
       posStatus:document.getElementById('posStatus'), positionsList:document.getElementById('positionsList'), resetBtn:document.getElementById('resetBtn'),
 
-      // IA
       aiOpenBtn:document.getElementById('aiOpenBtn'), aiAutoBtn:document.getElementById('aiAutoBtn'),
       aiPanel:document.getElementById('aiPanel'), aiCloseBtn:document.getElementById('aiCloseBtn'),
       aiSignal:document.getElementById('aiSignal'), aiConfidence:document.getElementById('aiConfidence'),
@@ -285,14 +284,13 @@
     function setConnectedUI(on){ els.connStatus.textContent = on ? 'Conectado (WebSocket ativo)' : 'Desconectado'; }
     function setAuthUI(on){
       authorized=!!on; const dis=!on;
-      [els.accountSelect,els.useAccountBtn,els.symbolSelect,els.stakeInput,els.multInput,els.tpInput,els.slInput,els.upBtn,els.downBtn,els.refreshBalanceBtn,els.tfSelect,els.aiOpenBtn,els.aiAutoBtn]
+      [els.accountSelect,els.symbolSelect,els.stakeInput,els.multInput,els.tpInput,els.slInput,els.upBtn,els.downBtn,els.tfSelect,els.aiOpenBtn,els.aiAutoBtn]
         .forEach(el=>{ el.disabled=dis; });
       els.logoutBtn.classList.toggle('hidden',!on); els.loginBtn.classList.toggle('hidden',on);
       els.loginNote.textContent = on ? 'Autorizado. Escolhe a conta e o símbolo para negociar.' : 'Clique em Conectar para iniciar o OAuth.';
       if(dis){ els.balanceInput.value=''; els.balanceInput.placeholder='—'; }
     }
 
-    // PT + prefixo “Caro Trader:” (verde)
     function translateError(msg){
       let m=String(msg||'');
       m = m.replace(/Your account balance \(([^)]+)\) is insufficient to buy this contract \(([^)]+)\)\./i, 'Saldo da sua conta ($1) é insuficiente para comprar este contrato ($2).');
@@ -310,7 +308,7 @@
     }
     function toast(msg,isErr=false){
       const raw = String(msg||'');
-      if(isErr && /Accepts/i.test(raw)){ // erro de multiplicador → só informar
+      if(isErr && /Accepts/i.test(raw)){
         const after = raw.split('Accepts')[1]?.replace(':','').trim() || '';
         const values = after.split(',').map(x=>Number(x.trim())).filter(Number.isFinite).sort((a,b)=>a-b);
         if(values.length){
@@ -472,12 +470,12 @@
           else{ if(q>liveBar.high) liveBar.high=q; if(q<liveBar.low) liveBar.low=q; liveBar.close=q; }
           candleSeries.update(liveBar);
 
-          // atualizar cache última barra em tempo real
           const key = `${currentSymbol}|${currentGranularity}`;
           const arr = barsCache.get(key) || [];
           if(arr.length){
             const last = arr[arr.length-1];
-            if(last.time===Math.floor(epoch/currentGranularity)*currentGranularity){
+            const bt = Math.floor(epoch/currentGranularity)*currentGranularity;
+            if(last.time===bt){
               last.high = Math.max(last.high, q);
               last.low  = Math.min(last.low, q);
               last.close = q;
@@ -490,7 +488,7 @@
       if(data.msg_type==='candles'&&Array.isArray(data.candles)){
         const bars=data.candles.map(c=>({time:+c.epoch,open:+c.open,high:+c.high,low:+c.low,close:+c.close}));
         if(candleSeries){ candleSeries.setData(bars); liveBar=bars[bars.length-1]||null; lwChart.timeScale().fitContent(); }
-        barsCache.set(`${currentSymbol}|${currentGranularity}`, bars.slice(-600)); // guarda até 600
+        barsCache.set(`${currentSymbol}|${currentGranularity}`, bars.slice(-600));
         maybeUpdateAI(true);
       }
 
@@ -499,7 +497,6 @@
         candleSeries.update({time:+c.open_time,open:+c.open,high:+c.high,low:+c.low,close:+c.close});
         if(c.complete) liveBar=null;
 
-        // manter cache
         const key = `${currentSymbol}|${currentGranularity}`;
         const arr = barsCache.get(key) || [];
         const t = +c.open_time;
@@ -667,7 +664,6 @@
         minusDM[i] = (dn>up && dn>0)? dn : 0;
         tr[i] = Math.max(arr[i].high-arr[i].low, Math.abs(arr[i].high-arr[i-1].close), Math.abs(arr[i].low-arr[i-1].close));
       }
-      // Wilder smoothing
       let ATR=0, pDM=0, mDM=0;
       for(let i=1;i<=period;i++){ ATR+=tr[i]; pDM+=plusDM[i]; mDM+=minusDM[i]; }
       ATR/=period; pDM/=period; mDM/=period;
@@ -681,7 +677,6 @@
         plusDI[i]=(pDM/ATR)*100; minusDI[i]=(mDM/ATR)*100;
         DX[i]=(Math.abs(plusDI[i]-minusDI[i])/(plusDI[i]+minusDI[i]))*100;
       }
-      // ADX
       const adx=[...new Array(arr.length).fill(null)];
       let s=0, start=period;
       for(let i=start;i<start+period;i++) s+=DX[i];
@@ -697,7 +692,6 @@
         for(let j=i-kPeriod+1;j<=i;j++){ h=Math.max(h,arr[j].high); l=Math.min(l,arr[j].low); }
         k[i] = ( (arr[i].close - l) / (h - l || 1) ) * 100;
       }
-      // %D = SMA de %K
       const d=new Array(arr.length).fill(null);
       let s=0, count=0;
       for(let i=0;i<arr.length;i++){
@@ -710,7 +704,7 @@
     }
     function bbands(arr, period=20, mult=2){
       const closes = arr.map(b=>b.close);
-      const ma = sma(closes, period); // alinhado ao fim
+      const ma = sma(closes, period);
       const out = new Array(arr.length).fill(null).map(()=>({mid:null, up:null, dn:null}));
       for(let i=period-1;i<closes.length;i++){
         const slice = closes.slice(i-period+1, i+1);
@@ -724,8 +718,7 @@
       if(arr.length<atrPeriod+2) return [];
       const _atr = atr(arr, atrPeriod);
       const res=new Array(arr.length).fill(null);
-      let dir=1; // 1=UP, -1=DOWN
-      let upper=0, lower=0;
+      let dir=1, upper=0, lower=0;
       for(let i=atrPeriod;i<arr.length;i++){
         const hl2 = (arr[i].high+arr[i].low)/2;
         const atrV = _atr[i]??0;
@@ -739,8 +732,38 @@
       }
       return res;
     }
-
-    // Resample (multi-timeframe local) — agrega N velas em 1
+    function donchian(arr, period=20){
+      const out=new Array(arr.length).fill(null).map(()=>({up:null,mid:null,dn:null}));
+      for(let i=period-1;i<arr.length;i++){
+        let h=-Infinity,l=Infinity; for(let j=i-period+1;j<=i;j++){ h=Math.max(h,arr[j].high); l=Math.min(l,arr[j].low); }
+        const mid=(h+l)/2; out[i]={up:h, mid, dn:l};
+      }
+      return out;
+    }
+    function ichimoku(arr){ // Tenkan(9), Kijun(26), SenkouA, SenkouB(52)
+      const len=arr.length;
+      const out=new Array(len).fill(null).map(()=>({tenkan:null,kijun:null,spanA:null,spanB:null}));
+      function hl(period, idx){
+        let h=-Infinity,l=Infinity;
+        for(let j=idx-period+1;j<=idx;j++){ if(j<0) continue; h=Math.max(h,arr[j].high); l=Math.min(l,arr[j].low); }
+        return {h,l};
+      }
+      for(let i=0;i<len;i++){
+        if(i>=8){ const {h,l}=hl(9,i); out[i].tenkan=(h+l)/2; }
+        if(i>=25){ const {h,l}=hl(26,i); out[i].kijun=(h+l)/2; }
+        if(i>=25 && out[i].tenkan!=null && out[i].kijun!=null){ out[i].spanA=(out[i].tenkan+out[i].kijun)/2; }
+        if(i>=51){ const {h,l}=hl(52,i); out[i].spanB=(h+l)/2; }
+      }
+      return out;
+    }
+    function vwapApprox(arr){ // sem volume → usa média cumulativa de preço típico
+      let sumTP=0, sumN=0; const out=new Array(arr.length).fill(null);
+      for(let i=0;i<arr.length;i++){
+        const tp=(arr[i].high+arr[i].low+arr[i].close)/3;
+        sumTP+=tp; sumN+=1; out[i]=sumTP/(sumN||1);
+      }
+      return out;
+    }
     function resample(bars, factor){
       if(!bars || bars.length===0 || factor<=1) return bars;
       const out=[];
@@ -756,11 +779,10 @@
       return out;
     }
 
-    // Score IA com múltiplos indicadores + confirmação TF maior
+    // Score IA com mais indicadores (+menos neutro p/ recomendações)
     function computeAI(bars){
       if(!bars || bars.length<60) return {signal:'Neutro', conf:0.0, holdSec:0, details:{}, summary:'Dados insuficientes.'};
 
-      const closes = bars.map(b=>b.close);
       const last = bars[bars.length-1];
 
       const ema9  = ema(bars, 9, x=>x.close);
@@ -774,6 +796,9 @@
       const { k:stochK, d:stochD } = stoch(bars,14,3);
       const bb = bbands(bars,20,2);
       const st = supertrend(bars,10,3);
+      const dch = donchian(bars,20);
+      const ich = ichimoku(bars);
+      const vwap = vwapApprox(bars);
 
       const e9 = ema9.at(-1), e21=ema21.at(-1), e50=ema50.at(-1);
       const rLast = rsi14.at(-1) ?? 50;
@@ -791,8 +816,10 @@
 
       const bbLast = bb.at(-1) || {mid:null,up:null,dn:null};
       const stLast = st.at(-1) || {dir:0,value:null};
+      const dchLast = dch.at(-1) || {up:null,mid:null,dn:null};
+      const ichLast = ich.at(-1) || {tenkan:null,kijun:null,spanA:null,spanB:null};
+      const vwapLast = vwap.at(-1) ?? last.close;
 
-      // Multi-timeframe: agrega ~3 velas do TF atual
       const barsHTF = resample(bars.slice(-180), 3);
       const ema50H = ema(barsHTF,50, x=>x.close).at(-1);
       const stH = supertrend(barsHTF,10,3).at(-1) || {dir:0};
@@ -800,66 +827,87 @@
       const macdUpH = (macdH.macdLine.at(-1) ?? 0) > (macdH.signal.at(-1) ?? 0);
       const macdDnH = (macdH.macdLine.at(-1) ?? 0) < (macdH.signal.at(-1) ?? 0);
 
-      // Regras de tendência
+      // Ichimoku direção cloud
+      const cloudUp = (ichLast.spanA!=null && ichLast.spanB!=null && last.close > Math.max(ichLast.spanA, ichLast.spanB));
+      const cloudDn = (ichLast.spanA!=null && ichLast.spanB!=null && last.close < Math.min(ichLast.spanA, ichLast.spanB));
+      const tenkanAboveKijun = (ichLast.tenkan!=null && ichLast.kijun!=null && ichLast.tenkan > ichLast.kijun);
+      const tenkanBelowKijun  = (ichLast.tenkan!=null && ichLast.kijun!=null && ichLast.tenkan < ichLast.kijun);
+
+      // VWAP posicionamento
+      const aboveVWAP = last.close > vwapLast;
+      const belowVWAP = last.close < vwapLast;
+
+      // Tendência base + HTF
       const trendUp   = last.close>e50 && e9>e21 && mLast>sLast && hLast>0 && stLast.dir===1;
       const trendDown = last.close<e50 && e9<e21 && mLast<sLast && hLast<0 && stLast.dir===-1;
-      const trendUpHTF   = (barsHTF.at(-1)?.close || 0) > (ema50H || Infinity*-1) && stH.dir===1 && macdUpH;
+      const trendUpHTF   = (barsHTF.at(-1)?.close || 0) > (ema50H || -Infinity) && stH.dir===1 && macdUpH;
       const trendDownHTF = (barsHTF.at(-1)?.close || 0) < (ema50H || Infinity) && stH.dir===-1 && macdDnH;
 
-      // Filtros de força
+      // Força / filtros
       const adxStrong = adxLast>=20;
       const diBull = pdi>mdi;
       const diBear = mdi>pdi;
-      const stochBull = kLast>dLast && kLast<80;
-      const stochBear = kLast<dLast && kLast>20;
-      const nearUpper = bbLast.up && last.close > bbLast.up*0.995;
-      const nearLower = bbLast.dn && last.close < bbLast.dn*1.005;
+      const stochBull = kLast>dLast && kLast<85;
+      const stochBear = kLast<dLast && kLast>15;
+      const nearUpper = bbLast.up && last.close > bbLast.up*BB_EDGE_UP;
+      const nearLower = bbLast.dn && last.close < bbLast.dn*BB_EDGE_DN;
 
       // Scoring
       let upScore=0, downScore=0, reasons=[];
       function add(reason, weight, dir){ if(dir==='up') upScore+=weight; else downScore+=weight; reasons.push(reason); }
 
-      if(trendUp){ add('Tendência UP (EMA/MACD/Supertrend)', 0.30, 'up'); }
-      if(trendDown){ add('Tendência DOWN (EMA/MACD/Supertrend)', 0.30, 'down'); }
+      if(trendUp){ add('Tendência UP (EMA/MACD/Supertrend)', 0.28, 'up'); }
+      if(trendDown){ add('Tendência DOWN (EMA/MACD/Supertrend)', 0.28, 'down'); }
 
-      if(trendUpHTF){ add('Confirmação UP no TF superior', 0.20, 'up'); }
-      if(trendDownHTF){ add('Confirmação DOWN no TF superior', 0.20, 'down'); }
+      if(trendUpHTF){ add('Confirmação UP no TF superior', 0.18, 'up'); }
+      if(trendDownHTF){ add('Confirmação DOWN no TF superior', 0.18, 'down'); }
 
-      if(adxStrong && diBull){ add('Força (ADX) e +DI>−DI', 0.15, 'up'); }
-      if(adxStrong && diBear){ add('Força (ADX) e −DI>+DI', 0.15, 'down'); }
+      if(adxStrong && diBull){ add('Força (ADX) e +DI>−DI', 0.12, 'up'); }
+      if(adxStrong && diBear){ add('Força (ADX) e −DI>+DI', 0.12, 'down'); }
 
-      if(stochBull){ add('Estocástico favorável (alta)', 0.10, 'up'); }
-      if(stochBear){ add('Estocástico favorável (baixa)', 0.10, 'down'); }
+      if(stochBull){ add('Estocástico favorável (alta)', 0.07, 'up'); }
+      if(stochBear){ add('Estocástico favorável (baixa)', 0.07, 'down'); }
 
-      if(bbLast.mid && last.close>bbLast.mid){ add('Preço acima da banda média (BB)', 0.08, 'up'); }
-      if(bbLast.mid && last.close<bbLast.mid){ add('Preço abaixo da banda média (BB)', 0.08, 'down'); }
+      if(bbLast.mid && last.close>bbLast.mid){ add('Preço acima da banda média (BB)', 0.05, 'up'); }
+      if(bbLast.mid && last.close<bbLast.mid){ add('Preço abaixo da banda média (BB)', 0.05, 'down'); }
 
-      // Penalidades
-      if(nearUpper){ downScore += 0.05; reasons.push('Perto da banda superior (risco de correção)'); }
-      if(nearLower){ upScore += 0.05;   reasons.push('Perto da banda inferior (risco de repique)'); }
+      // Donchian breakout / suporte-resistência
+      if(dchLast.up && last.close > dchLast.up*0.999) add('Rompendo Donchian superior', 0.08, 'up');
+      if(dchLast.dn && last.close < dchLast.dn*1.001) add('Rompendo Donchian inferior', 0.08, 'down');
 
-      // RSI zonas
-      if(rLast>70) { downScore+=0.05; reasons.push('RSI sobrecomprado'); }
-      if(rLast<30) { upScore+=0.05; reasons.push('RSI sobrev vendido'); }
+      // Ichimoku cloud / tenkan-kijun
+      if(cloudUp) add('Acima da nuvem Ichimoku', 0.08, 'up');
+      if(cloudDn) add('Abaixo da nuvem Ichimoku', 0.08, 'down');
+      if(tenkanAboveKijun) add('Tenkan > Kijun (bull)', 0.05, 'up');
+      if(tenkanBelowKijun) add('Tenkan < Kijun (bear)', 0.05, 'down');
 
-      // Confiança
-      let conf = Math.max(upScore,downScore);
-      conf = Math.min(0.95, Math.max(0.20, conf+0.35)); // base conservadora
+      // VWAP
+      if(aboveVWAP) add('Acima do VWAP', 0.04, 'up');
+      if(belowVWAP) add('Abaixo do VWAP', 0.04, 'down');
 
-      // Sinal final
+      // Penalidades (bordas BB)
+      if(nearUpper){ downScore += 0.04; reasons.push('Perto da banda superior (risco de correção)'); }
+      if(nearLower){ upScore   += 0.04; reasons.push('Perto da banda inferior (risco de repique)'); }
+
+      if(rLast>75) { downScore+=0.03; reasons.push('RSI sobrecomprado'); }
+      if(rLast<25) { upScore  +=0.03; reasons.push('RSI sobrevendido'); }
+
+      // Confiança (mais “falante” no Robô IA)
+      let confWeighted = Math.max(upScore,downScore);
+      confWeighted = Math.min(0.97, Math.max(0.20, confWeighted+0.30));
+
       let signal='Neutro';
-      if(upScore>downScore && upScore>=0.70) signal='UP';
-      else if(downScore>upScore && downScore>=0.70) signal='DOWN';
+      if(upScore>downScore && upScore>=SIGNAL_THRESHOLD) signal='UP';
+      else if(downScore>upScore && downScore>=SIGNAL_THRESHOLD) signal='DOWN';
 
-      // Tempo recomendado (nº de velas) com base na força (ADX) e confirmação TF
       let candles=2;
-      if(adxStrong && (trendUpHTF||trendDownHTF)) candles=4;
-      if(adxLast>=28) candles=5;
+      if(adxLast>=25 && (trendUpHTF||trendDownHTF)) candles=4;
+      if(adxLast>=32) candles=5;
       const holdSec = candles * (currentGranularity||60);
 
       return {
         signal,
-        conf: +(conf*100).toFixed(1),
+        conf: +(confWeighted*100).toFixed(1),
         holdSec,
         details:{
           close:last.close, ema9:e9, ema21:e21, ema50:e50, rsi:rLast,
@@ -867,7 +915,10 @@
           adx:adxLast, plusDI:pdi, minusDI:mdi,
           stochK:kLast, stochD:dLast,
           bbMid:bbLast.mid, bbUp:bbLast.up, bbDn:bbLast.dn,
-          stDir:stLast.dir, stVal:stLast.value
+          stDir:stLast.dir, stVal:stLast.value,
+          dchUp:dchLast.up, dchMid:dchLast.mid, dchDn:dchLast.dn,
+          tenkan:ichLast.tenkan, kijun:ichLast.kijun, spanA:ichLast.spanA, spanB:ichLast.spanB,
+          vwap:vwapLast
         },
         summary: reasons.join(' · ')
       };
@@ -876,7 +927,7 @@
     let lastAICalcAt = 0;
     function maybeUpdateAI(force=false){
       const now = Date.now();
-      if(!force && now-lastAICalcAt<500) return;
+      if(!force && now-lastAICalcAt<600) return;
       lastAICalcAt = now;
 
       const key = `${currentSymbol}|${currentGranularity}`;
@@ -894,10 +945,8 @@
       else if(res.signal==='DOWN') els.aiSignal.classList.add('pl-red');
       els.aiConfidence.textContent = `Confiança: ${res.conf}%`;
       els.aiUpdatedAt.textContent = new Date().toLocaleTimeString();
-      // Permanência sugerida
       const mins = Math.floor((res.holdSec||0)/60), secs=(res.holdSec||0)%60;
       els.aiHold.textContent = (res.holdSec>0) ? `${mins}m ${secs}s (aprox.)` : '—';
-      // Resumo motivos
       els.aiSummary.textContent = res.summary || '—';
 
       const d = res.details || {};
@@ -909,11 +958,12 @@
         <div class="glass rounded-lg p-2"><div class="text-[11px] text-slate-400">ADX(14) / +DI / −DI</div><div>${(d.adx||0).toFixed(2)} / ${(d.plusDI||0).toFixed(2)} / ${(d.minusDI||0).toFixed(2)}</div></div>
         <div class="glass rounded-lg p-2"><div class="text-[11px] text-slate-400">%K / %D (Stoch)</div><div>${(d.stochK||0).toFixed(2)} / ${(d.stochD||0).toFixed(2)}</div></div>
         <div class="glass rounded-lg p-2"><div class="text-[11px] text-slate-400">BB Mid/Up/Dn</div><div>${(d.bbMid||0).toFixed(5)} / ${(d.bbUp||0).toFixed(5)} / ${(d.bbDn||0).toFixed(5)}</div></div>
-        <div class="glass rounded-lg p-2"><div class="text-[11px] text-slate-400">Supertrend</div><div>${d.stDir===1?'Alta':'Baixa'} @ ${(d.stVal||0).toFixed(5)}</div></div>
+        <div class="glass rounded-lg p-2"><div class="text-[11px] text-slate-400">Donchian U/M/D (20)</div><div>${(d.dchUp||0).toFixed(5)} / ${(d.dchMid||0).toFixed(5)} / ${(d.dchDn||0).toFixed(5)}</div></div>
+        <div class="glass rounded-lg p-2"><div class="text-[11px] text-slate-400">Ichimoku T/K/SpanA/SpanB</div><div>${(d.tenkan||0).toFixed(5)} / ${(d.kijun||0).toFixed(5)} / ${(d.spanA||0).toFixed(5)} / ${(d.spanB||0).toFixed(5)}</div></div>
+        <div class="glass rounded-lg p-2"><div class="text-[11px] text-slate-400">VWAP</div><div>${(d.vwap||0).toFixed(5)}</div></div>
       `;
     }
 
-    // Executar sinal (AGORA SÓ ATUALIZA ANÁLISE)
     function refreshAISignal(){
       const res = maybeUpdateAI(true);
       if(!res) { showTraderMessage('dados insuficientes para analisar.'); return; }
@@ -922,29 +972,26 @@
       else showTraderMessage('Condições neutras. Aguarde melhor confluência ou altere o timeframe.');
     }
 
-    // IA (Auto) — conservadora & profissional
     let lastAutoAt = 0;
     function executeAIAuto(){
       const now = Date.now();
-      if(now - lastAutoAt < 8000){ showTraderMessage('aguarde alguns segundos antes de nova execução automática.'); return; }
+      if(now - lastAutoAt < AUTO_COOLDOWN_MS){ showTraderMessage('aguarde alguns segundos antes de nova execução automática.'); return; }
       const res = maybeUpdateAI(true);
       if(!res){ showTraderMessage('dados insuficientes para analisar.'); return; }
 
-      // filtros conservadores
-      const strongConf = res.conf >= 75;
+      const strongConf = res.conf >= AUTO_CONF_MIN;
       const d = res.details || {};
-      const adxOK = (d.adx||0) >= 22;
-      const rsiOK = (d.rsi||50) >= 35 && (d.rsi||50) <= 65; // evitar extremos
-      const stochOK = (d.stochK!=null && d.stochD!=null) ? Math.abs(d.stochK - d.stochD) <= 30 : true; // evitar pico extremo
-      const notNearBBEdge = !((d.bbUp && d.close>d.bbUp*0.998) || (d.bbDn && d.close<d.bbDn*1.002));
+      const adxOK = (d.adx||0) >= AUTO_ADX_MIN;
+      const rsiOK = (d.rsi||50) >= 35 && (d.rsi||50) <= 70;
+      const stochOK = (d.stochK!=null && d.stochD!=null) ? Math.abs(d.stochK - d.stochD) <= 35 : true;
+      const notNearBBEdge = !((d.bbUp && d.close>d.bbUp*BB_EDGE_UP) || (d.bbDn && d.close<d.bbDn*BB_EDGE_DN));
       const supertrendAgree = (res.signal==='UP' && d.stDir===1) || (res.signal==='DOWN' && d.stDir===-1);
 
       if(res.signal==='Neutro' || !strongConf || !adxOK || !rsiOK || !stochOK || !notNearBBEdge || !supertrendAgree){
-        showTraderMessage('Cenário ainda conservador/indefinido para auto-execução. Ajuste timeframe ou aguarde nova vela.');
+        showTraderMessage('Cenário conservador para auto-execução. Ajuste timeframe ou aguarde nova vela.');
         return;
       }
 
-      // valida multiplicador selecionado
       const symbol=els.symbolSelect.value;
       const multiplier=Number(els.multInput.value||0);
       const allowed = allowedBySymbol.get(symbol) || currentAllowedMultipliers || [];
@@ -955,7 +1002,6 @@
         return;
       }
 
-      // tudo ok → abrir
       lastAutoAt = now;
       if(res.signal==='UP') placeMultiplier('up');
       else if(res.signal==='DOWN') placeMultiplier('down');
@@ -1005,7 +1051,10 @@
       });
     }
 
-    function subscribeBalance(){ if(balanceSubId){ send({ forget:balanceSubId }); balanceSubId=null; } send({ balance:1, subscribe:1 }); els.refreshBalanceBtn.disabled=false; }
+    function subscribeBalance(){
+      if(balanceSubId){ send({ forget:balanceSubId }); balanceSubId=null; }
+      send({ balance:1, subscribe:1 });
+    }
     function checkMultipliersAvailability(symbol){ send({ contracts_for:symbol, currency }); }
 
     // ========= POSIÇÕES (UI) =========
@@ -1108,6 +1157,19 @@
 
     function loadActiveSymbols(){ send({ active_symbols:'full' }); }
 
+    function subscribeTicks(symbol){
+      if(activeTicksSymbol===symbol && tickSubId){ return; }
+      if(tickSubId){ send({ forget: tickSubId }); tickSubId=null; }
+      send({ forget_all: 'ticks' });
+      activeTicksSymbol = null;
+
+      if(els.tickSymbol) els.tickSymbol.textContent=symbol; if(els.tickNote) els.tickNote.textContent='Recebendo ticks...';
+      send({ ticks:symbol, subscribe:1 });
+      ws.addEventListener('message', function once(e){ const d=JSON.parse(e.data);
+        if(d.msg_type==='tick'&&d.tick&&d.subscription&&d.subscription.id){ tickSubId=d.subscription.id; activeTicksSymbol = symbol; ws.removeEventListener('message',once); }
+      });
+    }
+
     function loadCandles(symbol,granularitySec){
       if(!symbol) return; currentSymbol=symbol; currentGranularity=Number(granularitySec||60);
       const key = `${symbol}|${currentGranularity}`;
@@ -1124,6 +1186,47 @@
         if(d.msg_type==='ohlc'&&d.subscription&&d.subscription.id){ ohlcSubId=d.subscription.id; activeOHLCKey = key; ws.removeEventListener('message',once);} }catch(err){} });
     }
 
+    // ========= CONTA (select dinâmico: mostra só Demo/Real quando fechado) =========
+    function isDemoLogin(id){ return /VRTC/i.test(id||''); }
+    function buildAccountClosedState(){
+      const sel = els.accountSelect;
+      const remembered = JSON.parse(localStorage.getItem('POINT_SELECTED')||'null');
+      const label = remembered ? (isDemoLogin(remembered.account) ? 'Conta Demo' : 'Conta Real') : 'Selecionar conta';
+      sel.innerHTML = '';
+      const o = document.createElement('option');
+      o.value = remembered?.account || '';
+      o.textContent = label;
+      sel.appendChild(o);
+    }
+    function buildAccountOpenList(){
+      const sel = els.accountSelect;
+      const tokens = getStoredTokens();
+      sel.innerHTML = '';
+      tokens.forEach(t=>{
+        const o = document.createElement('option');
+        o.value = t.account;
+        o.textContent = `${t.account} • ${t.currency}`;
+        sel.appendChild(o);
+      });
+    }
+
+    els.accountSelect.addEventListener('focus', ()=>{
+      const tokens=getStoredTokens(); if(!tokens.length) return;
+      buildAccountOpenList();
+    });
+    els.accountSelect.addEventListener('change', ()=>{
+      const acct = els.accountSelect.value;
+      const tokens=getStoredTokens();
+      const chosen=tokens.find(t=>t.account===acct);
+      if(!chosen) return;
+      localStorage.setItem('POINT_SELECTED',JSON.stringify(chosen));
+      if(ws&&ws.readyState===1) authorize(chosen.token,chosen.account,chosen.currency); else connectWS();
+      setTimeout(()=>{ subscribeBalance(); },200);
+      // volta a mostrar "Conta Demo/Real"
+      setTimeout(buildAccountClosedState, 100);
+    });
+    els.accountSelect.addEventListener('blur', buildAccountClosedState);
+
     // ========= EVENTOS =========
     els.loginBtn.onclick=()=>{ window.location.href=OAUTH_URL; };
     els.logoutBtn.onclick=()=>{
@@ -1132,14 +1235,6 @@
       forgetAllSubscriptions();
       clearTokens(); setAuthUI(false); els.accountSelect.innerHTML=''; if(candleSeries) candleSeries.setData([]);
     };
-    els.useAccountBtn.onclick=()=>{
-      const opt=els.accountSelect.value; if(!opt) return;
-      const tokens=getStoredTokens(); const chosen=tokens.find(t=>t.account===opt); if(!chosen) return;
-      localStorage.setItem('POINT_SELECTED',JSON.stringify(chosen));
-      if(ws&&ws.readyState===1) authorize(chosen.token,chosen.account,chosen.currency); else connectWS();
-      setTimeout(()=>{ subscribeBalance(); },200);
-    };
-    els.refreshBalanceBtn.onclick=()=> send({ balance:1 });
 
     els.symbolSelect.onchange=(e)=>{
       const sym=e.target.value;
@@ -1174,21 +1269,30 @@
     // Robô IA painel
     els.aiOpenBtn.onclick = ()=>{ els.aiPanel.classList.add('open'); maybeUpdateAI(true); };
     els.aiCloseBtn.onclick = ()=> els.aiPanel.classList.remove('open');
-    els.aiExecuteBtn.onclick = refreshAISignal; // << agora só atualiza análise
-    els.aiAutoBtn.onclick = executeAIAuto;     // << auto-execução conservadora
+    els.aiExecuteBtn.onclick = refreshAISignal; // só atualiza análise
+    els.aiAutoBtn.onclick = executeAIAuto;     // auto-execução conservadora
 
     // ========= BOOT =========
     function extractAndBoot(){
       extractTokensFromUrl();
       const stored=getStoredTokens();
       if(stored.length){
-        els.accountSelect.innerHTML='';
-        stored.forEach(t=>{ const o=document.createElement('option'); o.value=t.account; o.textContent=`${t.account} • ${t.currency}`; els.accountSelect.appendChild(o); });
-        els.accountSelect.disabled=false; els.useAccountBtn.disabled=false;
-        connectWS(); const first=stored[0]; localStorage.setItem('POINT_SELECTED',JSON.stringify(first)); authorize(first.token,first.account,first.currency);
-      }else{ connectWS(); initChart(); }
+        els.accountSelect.disabled=false;
+        connectWS();
+        // Autoriza automaticamente na 1ª conta
+        const first=stored[0];
+        localStorage.setItem('POINT_SELECTED',JSON.stringify(first));
+        authorize(first.token,first.account,first.currency);
+        // mostre Conta Demo/Real quando fechado
+        setTimeout(buildAccountClosedState, 200);
+      }else{
+        connectWS(); initChart();
+      }
     }
     function authorize(token,acct,cur){ currency=(cur||'USD').toUpperCase(); send({ authorize:token, passthrough:{acct} }); }
+
+    // Multipliers
+    function checkMultipliersAvailability(symbol){ send({ contracts_for:symbol, currency }); }
 
     extractAndBoot();
   </script>
