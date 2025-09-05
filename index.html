@@ -28,6 +28,9 @@
       z-index:60;
     }
     #aiPanel.open{ transform: translateX(0); }
+
+    /* Separador fino */
+    .sep{ height:1px; background:#1e2a46; margin-top:.75rem; margin-bottom:.75rem; }
   </style>
 </head>
 <body>
@@ -163,10 +166,11 @@
             <button id="downBtn" class="btn flex-1 px-4 py-3 rounded-xl bg-rose-600 hover:bg-rose-500 text-white disabled:opacity-40" disabled>DOWN (MULTDOWN)</button>
           </div>
 
-          <!-- NOVOS BOTÕES IA -->
-          <div class="flex gap-3 mt-3">
+          <div class="sep"></div>
+
+          <!-- NOVOS BOTÕES IA (abaixo dos UP/DOWN) -->
+          <div class="flex gap-3">
             <button id="aiOpenBtn" class="btn flex-1 px-4 py-3 rounded-xl bg-sky-700 hover:bg-sky-600 text-white disabled:opacity-40" disabled>
-              <!-- ícone robô -->
               <span class="inline-flex items-center gap-2">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M12 2v3M7 22h10M4 19V9a4 4 0 0 1 4-4h8a4 4 0 0 1 4 4v10" stroke="#fff" stroke-width="1.5"/><rect x="6" y="11" width="4" height="4" rx="1" stroke="#fff" stroke-width="1.5"/><rect x="14" y="11" width="4" height="4" rx="1" stroke="#fff" stroke-width="1.5"/></svg>
                 Robô IA
@@ -202,17 +206,18 @@
         <div id="aiSignal" class="text-lg font-semibold">—</div>
         <div id="aiConfidence" class="text-sm text-slate-300">Confiança: —%</div>
       </div>
+      <div class="mt-1 text-xs text-slate-400">Permanência sugerida</div>
+      <div id="aiHold" class="text-sm">—</div>
+      <div class="mt-2 text-xs text-slate-400">Resumo</div>
+      <div id="aiSummary" class="text-sm">—</div>
+      <!-- Agora apenas atualiza análise; não abre contrato -->
       <button id="aiExecuteBtn" class="btn mt-3 w-full px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm">Executar sinal agora</button>
     </div>
 
     <div class="space-y-2">
       <div class="text-xs uppercase tracking-wide text-slate-400">Indicadores</div>
-      <div id="aiIndicators" class="grid grid-cols-2 gap-2 text-sm">
-        <!-- preenchido por JS -->
-      </div>
-      <div class="text-[11px] text-slate-500 mt-2">
-        Nota: ferramenta experimental. Os sinais não garantem resultados. Utilize gestão de risco.
-      </div>
+      <div id="aiIndicators" class="grid grid-cols-2 gap-2 text-sm"></div>
+      <div class="text-[11px] text-slate-500 mt-2">Nota: ferramenta experimental. Utilize gestão de risco.</div>
     </div>
   </div>
 
@@ -273,6 +278,7 @@
       aiSignal:document.getElementById('aiSignal'), aiConfidence:document.getElementById('aiConfidence'),
       aiIndicators:document.getElementById('aiIndicators'), aiUpdatedAt:document.getElementById('aiUpdatedAt'),
       aiExecuteBtn:document.getElementById('aiExecuteBtn'),
+      aiHold:document.getElementById('aiHold'), aiSummary:document.getElementById('aiSummary'),
     };
 
     // ========= UI helpers =========
@@ -598,6 +604,363 @@
       }
     }
 
+    // ========= Indicadores =========
+    function sma(vals, p){ if(vals.length<p) return []; const out=[]; let s=0; for(let i=0;i<vals.length;i++){ s+=vals[i]; if(i>=p) s-=vals[i-p]; if(i>=p-1) out.push(s/p); } return out; }
+    function ema(arr, period, accessor=(x)=>x){
+      const k = 2/(period+1); let emaPrev;
+      return arr.map((v,i)=>{
+        const val = accessor(v);
+        if(i===0){ emaPrev = val; return val; }
+        emaPrev = val*k + emaPrev*(1-k);
+        return emaPrev;
+      });
+    }
+    function rsi(arr, period=14, accessor=(x)=>x){
+      if(arr.length<period+1) return [];
+      let gains=0, losses=0;
+      for(let i=1;i<=period;i++){
+        const ch = accessor(arr[i]) - accessor(arr[i-1]);
+        if(ch>=0) gains += ch; else losses += -ch;
+      }
+      gains/=period; losses/=period;
+      const out = new Array(arr.length).fill(null);
+      out[period] = 100 - 100/(1 + (losses===0?1000:gains/losses));
+      for(let i=period+1;i<arr.length;i++){
+        const ch = accessor(arr[i]) - accessor(arr[i-1]);
+        const gain = ch>0?ch:0;
+        const loss = ch<0?-ch:0;
+        gains = (gains*(period-1)+gain)/period;
+        losses= (losses*(period-1)+loss)/period;
+        out[i] = 100 - 100/(1 + (losses===0?1000:gains/losses));
+      }
+      return out;
+    }
+    function macd(arr, fast=12, slow=26, signalP=9, accessor=(x)=>x){
+      const emaFast = ema(arr, fast, accessor);
+      const emaSlow = ema(arr, slow, accessor);
+      const macdLine = emaFast.map((v,i)=> v - (emaSlow[i]??0));
+      const signal = ema(macdLine.map(v=>({v})), signalP, x=>x.v);
+      const hist = macdLine.map((v,i)=> v - (signal[i]??0));
+      return { macdLine, signal, hist };
+    }
+    function atr(arr, period=14){
+      if(arr.length<period+1) return [];
+      const trs = [null];
+      for(let i=1;i<arr.length;i++){
+        const h = arr[i].high, l = arr[i].low, cPrev = arr[i-1].close;
+        trs[i] = Math.max(h-l, Math.abs(h-cPrev), Math.abs(l-cPrev));
+      }
+      const out=new Array(arr.length).fill(null);
+      let s=0;
+      for(let i=1;i<=period;i++) s+=trs[i];
+      out[period]=s/period;
+      for(let i=period+1;i<arr.length;i++) out[i]=(out[i-1]*(period-1)+trs[i])/period;
+      return out;
+    }
+    function adx(arr, period=14){
+      if(arr.length<period+2) return {adx:[], plusDI:[], minusDI:[]};
+      const plusDM=[null], minusDM=[null], tr=[null];
+      for(let i=1;i<arr.length;i++){
+        const up = arr[i].high - arr[i-1].high;
+        const dn = arr[i-1].low - arr[i].low;
+        plusDM[i]  = (up>dn && up>0)? up : 0;
+        minusDM[i] = (dn>up && dn>0)? dn : 0;
+        tr[i] = Math.max(arr[i].high-arr[i].low, Math.abs(arr[i].high-arr[i-1].close), Math.abs(arr[i].low-arr[i-1].close));
+      }
+      // Wilder smoothing
+      let ATR=0, pDM=0, mDM=0;
+      for(let i=1;i<=period;i++){ ATR+=tr[i]; pDM+=plusDM[i]; mDM+=minusDM[i]; }
+      ATR/=period; pDM/=period; mDM/=period;
+      const plusDI=[...new Array(arr.length).fill(null)], minusDI=[...new Array(arr.length).fill(null)], DX=[...new Array(arr.length).fill(null)];
+      plusDI[period] = (pDM/ATR)*100; minusDI[period]=(mDM/ATR)*100; DX[period]= (Math.abs(plusDI[period]-minusDI[period])/(plusDI[period]+minusDI[period]))*100;
+
+      for(let i=period+1;i<arr.length;i++){
+        ATR = (ATR*(period-1)+tr[i])/period;
+        pDM = (pDM*(period-1)+plusDM[i])/period;
+        mDM = (mDM*(period-1)+minusDM[i])/period;
+        plusDI[i]=(pDM/ATR)*100; minusDI[i]=(mDM/ATR)*100;
+        DX[i]=(Math.abs(plusDI[i]-minusDI[i])/(plusDI[i]+minusDI[i]))*100;
+      }
+      // ADX
+      const adx=[...new Array(arr.length).fill(null)];
+      let s=0, start=period;
+      for(let i=start;i<start+period;i++) s+=DX[i];
+      adx[start+period-1]=s/period;
+      for(let i=start+period;i<arr.length;i++) adx[i]=(adx[i-1]*(period-1)+DX[i])/period;
+      return { adx, plusDI, minusDI };
+    }
+    function stoch(arr, kPeriod=14, dPeriod=3){
+      if(arr.length<kPeriod) return {k:[], d:[]};
+      const k=new Array(arr.length).fill(null);
+      for(let i=kPeriod-1;i<arr.length;i++){
+        let h=-Infinity,l=Infinity;
+        for(let j=i-kPeriod+1;j<=i;j++){ h=Math.max(h,arr[j].high); l=Math.min(l,arr[j].low); }
+        k[i] = ( (arr[i].close - l) / (h - l || 1) ) * 100;
+      }
+      // %D = SMA de %K
+      const d=new Array(arr.length).fill(null);
+      let s=0, count=0;
+      for(let i=0;i<arr.length;i++){
+        if(k[i]==null){ d[i]=null; continue; }
+        s+=k[i]; count++;
+        if(count>dPeriod){ s-=k[i-dPeriod]; count--; }
+        if(count===dPeriod) d[i]=s/dPeriod;
+      }
+      return {k, d};
+    }
+    function bbands(arr, period=20, mult=2){
+      const closes = arr.map(b=>b.close);
+      const ma = sma(closes, period); // alinhado ao fim
+      const out = new Array(arr.length).fill(null).map(()=>({mid:null, up:null, dn:null}));
+      for(let i=period-1;i<closes.length;i++){
+        const slice = closes.slice(i-period+1, i+1);
+        const mean = ma[i-(period-1)];
+        const sd = Math.sqrt(slice.reduce((s,x)=>s+(x-mean)*(x-mean),0)/period);
+        out[i] = { mid: mean, up: mean + mult*sd, dn: mean - mult*sd };
+      }
+      return out;
+    }
+    function supertrend(arr, atrPeriod=10, factor=3){
+      if(arr.length<atrPeriod+2) return [];
+      const _atr = atr(arr, atrPeriod);
+      const res=new Array(arr.length).fill(null);
+      let dir=1; // 1=UP, -1=DOWN
+      let upper=0, lower=0;
+      for(let i=atrPeriod;i<arr.length;i++){
+        const hl2 = (arr[i].high+arr[i].low)/2;
+        const atrV = _atr[i]??0;
+        const ub = hl2 + factor*atrV;
+        const lb = hl2 - factor*atrV;
+        if(i===atrPeriod){ upper=ub; lower=lb; res[i]={dir, value:lb}; continue; }
+        upper = (ub < upper || arr[i-1].close > upper) ? ub : upper;
+        lower = (lb > lower || arr[i-1].close < lower) ? lb : lower;
+        if(arr[i].close > upper){ dir=1; } else if(arr[i].close < lower){ dir=-1; }
+        res[i] = {dir, value: (dir===1?lower:upper)};
+      }
+      return res;
+    }
+
+    // Resample (multi-timeframe local) — agrega N velas em 1
+    function resample(bars, factor){
+      if(!bars || bars.length===0 || factor<=1) return bars;
+      const out=[];
+      for(let i=0;i<bars.length;i+=factor){
+        const chunk = bars.slice(i,i+factor);
+        if(chunk.length===0) continue;
+        const open = chunk[0].open;
+        const close = chunk[chunk.length-1].close;
+        let high=-Infinity, low=Infinity, time=chunk[0].time;
+        chunk.forEach(b=>{ if(b.high>high) high=b.high; if(b.low<low) low=b.low; });
+        out.push({time, open, high, low, close});
+      }
+      return out;
+    }
+
+    // Score IA com múltiplos indicadores + confirmação TF maior
+    function computeAI(bars){
+      if(!bars || bars.length<60) return {signal:'Neutro', conf:0.0, holdSec:0, details:{}, summary:'Dados insuficientes.'};
+
+      const closes = bars.map(b=>b.close);
+      const last = bars[bars.length-1];
+
+      const ema9  = ema(bars, 9, x=>x.close);
+      const ema21 = ema(bars,21, x=>x.close);
+      const ema50 = ema(bars,50, x=>x.close);
+
+      const rsi14 = rsi(bars,14,x=>x.close);
+      const { macdLine, signal:macdSig, hist } = macd(bars,12,26,9,x=>x.close);
+      const atr14 = atr(bars,14);
+      const { adx:adx14, plusDI, minusDI } = adx(bars,14);
+      const { k:stochK, d:stochD } = stoch(bars,14,3);
+      const bb = bbands(bars,20,2);
+      const st = supertrend(bars,10,3);
+
+      const e9 = ema9.at(-1), e21=ema21.at(-1), e50=ema50.at(-1);
+      const rLast = rsi14.at(-1) ?? 50;
+      const mLast = macdLine.at(-1) ?? 0;
+      const sLast = macdSig.at(-1) ?? 0;
+      const hLast = hist.at(-1) ?? 0;
+      const atrLast = atr14.at(-1) ?? 0;
+
+      const adxLast = adx14.at(-1) ?? 0;
+      const pdi = plusDI.at(-1) ?? 0;
+      const mdi = minusDI.at(-1) ?? 0;
+
+      const kLast = stochK.at(-1) ?? 50;
+      const dLast = stochD.at(-1) ?? 50;
+
+      const bbLast = bb.at(-1) || {mid:null,up:null,dn:null};
+      const stLast = st.at(-1) || {dir:0,value:null};
+
+      // Multi-timeframe: agrega ~3 velas do TF atual
+      const barsHTF = resample(bars.slice(-180), 3);
+      const ema50H = ema(barsHTF,50, x=>x.close).at(-1);
+      const stH = supertrend(barsHTF,10,3).at(-1) || {dir:0};
+      const macdH = macd(barsHTF,12,26,9,x=>x.close);
+      const macdUpH = (macdH.macdLine.at(-1) ?? 0) > (macdH.signal.at(-1) ?? 0);
+      const macdDnH = (macdH.macdLine.at(-1) ?? 0) < (macdH.signal.at(-1) ?? 0);
+
+      // Regras de tendência
+      const trendUp   = last.close>e50 && e9>e21 && mLast>sLast && hLast>0 && stLast.dir===1;
+      const trendDown = last.close<e50 && e9<e21 && mLast<sLast && hLast<0 && stLast.dir===-1;
+      const trendUpHTF   = (barsHTF.at(-1)?.close || 0) > (ema50H || Infinity*-1) && stH.dir===1 && macdUpH;
+      const trendDownHTF = (barsHTF.at(-1)?.close || 0) < (ema50H || Infinity) && stH.dir===-1 && macdDnH;
+
+      // Filtros de força
+      const adxStrong = adxLast>=20;
+      const diBull = pdi>mdi;
+      const diBear = mdi>pdi;
+      const stochBull = kLast>dLast && kLast<80;
+      const stochBear = kLast<dLast && kLast>20;
+      const nearUpper = bbLast.up && last.close > bbLast.up*0.995;
+      const nearLower = bbLast.dn && last.close < bbLast.dn*1.005;
+
+      // Scoring
+      let upScore=0, downScore=0, reasons=[];
+      function add(reason, weight, dir){ if(dir==='up') upScore+=weight; else downScore+=weight; reasons.push(reason); }
+
+      if(trendUp){ add('Tendência UP (EMA/MACD/Supertrend)', 0.30, 'up'); }
+      if(trendDown){ add('Tendência DOWN (EMA/MACD/Supertrend)', 0.30, 'down'); }
+
+      if(trendUpHTF){ add('Confirmação UP no TF superior', 0.20, 'up'); }
+      if(trendDownHTF){ add('Confirmação DOWN no TF superior', 0.20, 'down'); }
+
+      if(adxStrong && diBull){ add('Força (ADX) e +DI>−DI', 0.15, 'up'); }
+      if(adxStrong && diBear){ add('Força (ADX) e −DI>+DI', 0.15, 'down'); }
+
+      if(stochBull){ add('Estocástico favorável (alta)', 0.10, 'up'); }
+      if(stochBear){ add('Estocástico favorável (baixa)', 0.10, 'down'); }
+
+      if(bbLast.mid && last.close>bbLast.mid){ add('Preço acima da banda média (BB)', 0.08, 'up'); }
+      if(bbLast.mid && last.close<bbLast.mid){ add('Preço abaixo da banda média (BB)', 0.08, 'down'); }
+
+      // Penalidades
+      if(nearUpper){ downScore += 0.05; reasons.push('Perto da banda superior (risco de correção)'); }
+      if(nearLower){ upScore += 0.05;   reasons.push('Perto da banda inferior (risco de repique)'); }
+
+      // RSI zonas
+      if(rLast>70) { downScore+=0.05; reasons.push('RSI sobrecomprado'); }
+      if(rLast<30) { upScore+=0.05; reasons.push('RSI sobrev vendido'); }
+
+      // Confiança
+      let conf = Math.max(upScore,downScore);
+      conf = Math.min(0.95, Math.max(0.20, conf+0.35)); // base conservadora
+
+      // Sinal final
+      let signal='Neutro';
+      if(upScore>downScore && upScore>=0.70) signal='UP';
+      else if(downScore>upScore && downScore>=0.70) signal='DOWN';
+
+      // Tempo recomendado (nº de velas) com base na força (ADX) e confirmação TF
+      let candles=2;
+      if(adxStrong && (trendUpHTF||trendDownHTF)) candles=4;
+      if(adxLast>=28) candles=5;
+      const holdSec = candles * (currentGranularity||60);
+
+      return {
+        signal,
+        conf: +(conf*100).toFixed(1),
+        holdSec,
+        details:{
+          close:last.close, ema9:e9, ema21:e21, ema50:e50, rsi:rLast,
+          macd:mLast, macdSig:sLast, macdHist:hLast, atr:atrLast,
+          adx:adxLast, plusDI:pdi, minusDI:mdi,
+          stochK:kLast, stochD:dLast,
+          bbMid:bbLast.mid, bbUp:bbLast.up, bbDn:bbLast.dn,
+          stDir:stLast.dir, stVal:stLast.value
+        },
+        summary: reasons.join(' · ')
+      };
+    }
+
+    let lastAICalcAt = 0;
+    function maybeUpdateAI(force=false){
+      const now = Date.now();
+      if(!force && now-lastAICalcAt<500) return;
+      lastAICalcAt = now;
+
+      const key = `${currentSymbol}|${currentGranularity}`;
+      const bars = barsCache.get(key);
+      const res = computeAI(bars);
+      renderAIPanel(res);
+      return res;
+    }
+
+    function renderAIPanel(res){
+      if(!res) return;
+      els.aiSignal.textContent = res.signal;
+      els.aiSignal.classList.remove('pl-green','pl-red');
+      if(res.signal==='UP') els.aiSignal.classList.add('pl-green');
+      else if(res.signal==='DOWN') els.aiSignal.classList.add('pl-red');
+      els.aiConfidence.textContent = `Confiança: ${res.conf}%`;
+      els.aiUpdatedAt.textContent = new Date().toLocaleTimeString();
+      // Permanência sugerida
+      const mins = Math.floor((res.holdSec||0)/60), secs=(res.holdSec||0)%60;
+      els.aiHold.textContent = (res.holdSec>0) ? `${mins}m ${secs}s (aprox.)` : '—';
+      // Resumo motivos
+      els.aiSummary.textContent = res.summary || '—';
+
+      const d = res.details || {};
+      els.aiIndicators.innerHTML = `
+        <div class="glass rounded-lg p-2"><div class="text-[11px] text-slate-400">EMA9/21/50</div><div>${(d.ema9||0).toFixed(5)} / ${(d.ema21||0).toFixed(5)} / ${(d.ema50||0).toFixed(5)}</div></div>
+        <div class="glass rounded-lg p-2"><div class="text-[11px] text-slate-400">RSI(14)</div><div>${(d.rsi||0).toFixed(2)}</div></div>
+        <div class="glass rounded-lg p-2"><div class="text-[11px] text-slate-400">MACD / Sinal / Hist</div><div>${(d.macd||0).toFixed(5)} / ${(d.macdSig||0).toFixed(5)} / ${(d.macdHist||0).toFixed(5)}</div></div>
+        <div class="glass rounded-lg p-2"><div class="text-[11px] text-slate-400">ATR(14)</div><div>${(d.atr||0).toFixed(5)}</div></div>
+        <div class="glass rounded-lg p-2"><div class="text-[11px] text-slate-400">ADX(14) / +DI / −DI</div><div>${(d.adx||0).toFixed(2)} / ${(d.plusDI||0).toFixed(2)} / ${(d.minusDI||0).toFixed(2)}</div></div>
+        <div class="glass rounded-lg p-2"><div class="text-[11px] text-slate-400">%K / %D (Stoch)</div><div>${(d.stochK||0).toFixed(2)} / ${(d.stochD||0).toFixed(2)}</div></div>
+        <div class="glass rounded-lg p-2"><div class="text-[11px] text-slate-400">BB Mid/Up/Dn</div><div>${(d.bbMid||0).toFixed(5)} / ${(d.bbUp||0).toFixed(5)} / ${(d.bbDn||0).toFixed(5)}</div></div>
+        <div class="glass rounded-lg p-2"><div class="text-[11px] text-slate-400">Supertrend</div><div>${d.stDir===1?'Alta':'Baixa'} @ ${(d.stVal||0).toFixed(5)}</div></div>
+      `;
+    }
+
+    // Executar sinal (AGORA SÓ ATUALIZA ANÁLISE)
+    function refreshAISignal(){
+      const res = maybeUpdateAI(true);
+      if(!res) { showTraderMessage('dados insuficientes para analisar.'); return; }
+      if(res.signal==='UP') showTraderMessage(`sugerimos **UP** com confiança ${res.conf}% · permanecer ~ ${Math.round((res.holdSec||0)/60)} min.`);
+      else if(res.signal==='DOWN') showTraderMessage(`sugerimos **DOWN** com confiança ${res.conf}% · permanecer ~ ${Math.round((res.holdSec||0)/60)} min.`);
+      else showTraderMessage('Condições neutras. Aguarde melhor confluência ou altere o timeframe.');
+    }
+
+    // IA (Auto) — conservadora & profissional
+    let lastAutoAt = 0;
+    function executeAIAuto(){
+      const now = Date.now();
+      if(now - lastAutoAt < 8000){ showTraderMessage('aguarde alguns segundos antes de nova execução automática.'); return; }
+      const res = maybeUpdateAI(true);
+      if(!res){ showTraderMessage('dados insuficientes para analisar.'); return; }
+
+      // filtros conservadores
+      const strongConf = res.conf >= 75;
+      const d = res.details || {};
+      const adxOK = (d.adx||0) >= 22;
+      const rsiOK = (d.rsi||50) >= 35 && (d.rsi||50) <= 65; // evitar extremos
+      const stochOK = (d.stochK!=null && d.stochD!=null) ? Math.abs(d.stochK - d.stochD) <= 30 : true; // evitar pico extremo
+      const notNearBBEdge = !((d.bbUp && d.close>d.bbUp*0.998) || (d.bbDn && d.close<d.bbDn*1.002));
+      const supertrendAgree = (res.signal==='UP' && d.stDir===1) || (res.signal==='DOWN' && d.stDir===-1);
+
+      if(res.signal==='Neutro' || !strongConf || !adxOK || !rsiOK || !stochOK || !notNearBBEdge || !supertrendAgree){
+        showTraderMessage('Cenário ainda conservador/indefinido para auto-execução. Ajuste timeframe ou aguarde nova vela.');
+        return;
+      }
+
+      // valida multiplicador selecionado
+      const symbol=els.symbolSelect.value;
+      const multiplier=Number(els.multInput.value||0);
+      const allowed = allowedBySymbol.get(symbol) || currentAllowedMultipliers || [];
+      if(Array.isArray(allowed) && allowed.length && !allowed.includes(multiplier)){
+        const list = allowed.map(v=>'x'+v).join(', ');
+        showTraderMessage(`o multiplicador x${multiplier} não é suportado para este mercado. Suportados: ${list}.`);
+        updateMultiplierHighlights();
+        return;
+      }
+
+      // tudo ok → abrir
+      lastAutoAt = now;
+      if(res.signal==='UP') placeMultiplier('up');
+      else if(res.signal==='DOWN') placeMultiplier('down');
+    }
+
     // ========= API =========
     function authorize(token,acct,cur){ currency=(cur||'USD').toUpperCase(); send({ authorize:token, passthrough:{acct} }); }
     function loadActiveSymbols(){ send({ active_symbols:'full' }); }
@@ -761,170 +1124,6 @@
         if(d.msg_type==='ohlc'&&d.subscription&&d.subscription.id){ ohlcSubId=d.subscription.id; activeOHLCKey = key; ws.removeEventListener('message',once);} }catch(err){} });
     }
 
-    // ========= IA: Sinais =========
-    function ema(arr, period, accessor=(x)=>x){
-      const k = 2/(period+1); let emaPrev;
-      return arr.map((v,i)=>{
-        const val = accessor(v);
-        if(i===0){ emaPrev = val; return val; }
-        emaPrev = val*k + emaPrev*(1-k);
-        return emaPrev;
-      });
-    }
-    function rsi(arr, period=14, accessor=(x)=>x){
-      let gains=0, losses=0;
-      for(let i=1;i<=period;i++){
-        const ch = accessor(arr[i]) - accessor(arr[i-1]);
-        if(ch>=0) gains += ch; else losses += -ch;
-      }
-      gains/=period; losses/=period;
-      const out = [];
-      out[period] = 100 - 100/(1 + (losses===0?1000:gains/losses));
-      for(let i=period+1;i<arr.length;i++){
-        const ch = accessor(arr[i]) - accessor(arr[i-1]);
-        const gain = ch>0?ch:0;
-        const loss = ch<0?-ch:0;
-        gains = (gains*(period-1)+gain)/period;
-        losses= (losses*(period-1)+loss)/period;
-        out[i] = 100 - 100/(1 + (losses===0?1000:gains/losses));
-      }
-      return out;
-    }
-    function macd(arr, fast=12, slow=26, signalP=9, accessor=(x)=>x){
-      const closes = arr.map(accessor);
-      const emaFast = ema(arr, fast, accessor);
-      const emaSlow = ema(arr, slow, accessor);
-      const macdLine = closes.map((_,i)=> (emaFast[i]-emaSlow[i]));
-      const signal = ema(macdLine.map(v=>({v})), signalP, x=>x.v);
-      const hist = macdLine.map((v,i)=> v - (signal[i]??0));
-      return { macdLine, signal, hist };
-    }
-    function atr(arr, period=14){
-      const trs = [];
-      for(let i=1;i<arr.length;i++){
-        const h = arr[i].high, l = arr[i].low, cPrev = arr[i-1].close;
-        trs.push(Math.max(h-l, Math.abs(h-cPrev), Math.abs(l-cPrev)));
-      }
-      const out=[]; let sum=0;
-      for(let i=0;i<trs.length;i++){
-        if(i<period){ sum+=trs[i]; if(i===period-1){ out[i]=sum/period; } }
-        else { out[i] = (out[i-1]*(period-1)+trs[i])/period; }
-      }
-      return out;
-    }
-    function stddev(values){
-      const m = values.reduce((a,b)=>a+b,0)/values.length;
-      const v = values.reduce((s,x)=> s+(x-m)*(x-m), 0)/values.length;
-      return Math.sqrt(v);
-    }
-
-    function computeAI(bars){
-      if(!bars || bars.length<60) return {signal:'Neutro', conf:0.0, details:{}};
-      const closes = bars.map(b=>b.close);
-      const last = bars[bars.length-1];
-
-      const ema9  = ema(bars, 9, x=>x.close);
-      const ema21 = ema(bars,21, x=>x.close);
-      const ema50 = ema(bars,50, x=>x.close);
-
-      const rsi14 = rsi(bars,14,x=>x.close);
-      const { macdLine, signal:macdSig, hist } = macd(bars,12,26,9,x=>x.close);
-      const atr14 = atr(bars,14);
-
-      const e9 = ema9[ema9.length-1], e21 = ema21[ema21.length-1], e50 = ema50[ema50.length-1];
-      const rLast = rsi14[rsi14.length-1] ?? 50;
-      const mLast = macdLine[macdLine.length-1] ?? 0;
-      const sLast = macdSig[macdSig.length-1] ?? 0;
-      const hLast = hist[hist.length-1] ?? 0;
-      const atrLast = atr14[atr14.length-1] ?? 0;
-
-      // tendência
-      const trendUp   = last.close>e50 && e9>e21 && mLast>sLast && hLast>0;
-      const trendDown = last.close<e50 && e9<e21 && mLast<sLast && hLast<0;
-
-      // força
-      const rBull = Math.max(0, (rLast-50)/50); // 0..1
-      const rBear = Math.max(0, (50-rLast)/50);
-
-      // volatilidade normalizada
-      const ret = [];
-      for(let i=1;i<closes.length;i++) ret.push((closes[i]-closes[i-1])/closes[i-1]);
-      const vol = Math.min(1, stddev(ret.slice(-50))*100); // escala simples
-
-      // scoring simples
-      let upScore = 0, downScore = 0;
-      upScore += trendUp ? 0.45 : 0;
-      downScore += trendDown ? 0.45 : 0;
-
-      upScore += rBull*0.25;
-      downScore += rBear*0.25;
-
-      upScore += (hLast>0?0.15:0);
-      downScore += (hLast<0?0.15:0);
-
-      // penaliza zonas extremas de RSI
-      if(rLast>70) downScore+=0.1;
-      if(rLast<30) upScore+=0.1;
-
-      // confiança: menor se vol muito baixa/alta
-      const confBase = 0.6 - Math.abs(vol-0.25); // pico em ~0.25
-      const conf = Math.max(0.2, Math.min(0.95, (confBase + Math.max(upScore,downScore)) ));
-
-      let signal='Neutro';
-      if(upScore>downScore && upScore>0.55) signal='UP';
-      else if(downScore>upScore && downScore>0.55) signal='DOWN';
-
-      return {
-        signal,
-        conf: +(conf*100).toFixed(1),
-        details:{
-          close:last.close, ema9:e9, ema21:e21, ema50:e50,
-          rsi:rLast, macd:mLast, macdSig:sLast, macdHist:hLast, atr:atrLast
-        }
-      };
-    }
-
-    let lastAICalcAt = 0;
-    function maybeUpdateAI(force=false){
-      const now = Date.now();
-      if(!force && now-lastAICalcAt<500) return;
-      lastAICalcAt = now;
-
-      const key = `${currentSymbol}|${currentGranularity}`;
-      const bars = barsCache.get(key);
-      const res = computeAI(bars);
-      renderAIPanel(res);
-      return res;
-    }
-
-    function renderAIPanel(res){
-      if(!res) return;
-      els.aiSignal.textContent = res.signal;
-      els.aiSignal.classList.remove('pl-green','pl-red');
-      if(res.signal==='UP') els.aiSignal.classList.add('pl-green');
-      else if(res.signal==='DOWN') els.aiSignal.classList.add('pl-red');
-      els.aiConfidence.textContent = `Confiança: ${res.conf}%`;
-      els.aiUpdatedAt.textContent = new Date().toLocaleTimeString();
-
-      const d = res.details || {};
-      els.aiIndicators.innerHTML = `
-        <div class="glass rounded-lg p-2"><div class="text-[11px] text-slate-400">EMA9/21/50</div><div>${(d.ema9||0).toFixed(5)} / ${(d.ema21||0).toFixed(5)} / ${(d.ema50||0).toFixed(5)}</div></div>
-        <div class="glass rounded-lg p-2"><div class="text-[11px] text-slate-400">RSI(14)</div><div>${(d.rsi||0).toFixed(2)}</div></div>
-        <div class="glass rounded-lg p-2"><div class="text-[11px] text-slate-400">MACD / Sinal</div><div>${(d.macd||0).toFixed(5)} / ${(d.macdSig||0).toFixed(5)}</div></div>
-        <div class="glass rounded-lg p-2"><div class="text-[11px] text-slate-400">Hist MACD</div><div>${(d.macdHist||0).toFixed(5)}</div></div>
-        <div class="glass rounded-lg p-2"><div class="text-[11px] text-slate-400">ATR(14)</div><div>${(d.atr||0).toFixed(5)}</div></div>
-        <div class="glass rounded-lg p-2"><div class="text-[11px] text-slate-400">Preço</div><div>${(d.close||0).toFixed(5)}</div></div>
-      `;
-    }
-
-    function executeAISignal(){
-      const res = maybeUpdateAI(true);
-      if(!res){ showTraderMessage('dados insuficientes para analisar.'); return; }
-      if(res.signal==='UP') placeMultiplier('up');
-      else if(res.signal==='DOWN') placeMultiplier('down');
-      else showTraderMessage('Condições incertas (sinal neutro). Ajuste timeframe ou aguarde novo candle.');
-    }
-
     // ========= EVENTOS =========
     els.loginBtn.onclick=()=>{ window.location.href=OAUTH_URL; };
     els.logoutBtn.onclick=()=>{
@@ -975,8 +1174,8 @@
     // Robô IA painel
     els.aiOpenBtn.onclick = ()=>{ els.aiPanel.classList.add('open'); maybeUpdateAI(true); };
     els.aiCloseBtn.onclick = ()=> els.aiPanel.classList.remove('open');
-    els.aiExecuteBtn.onclick = executeAISignal;
-    els.aiAutoBtn.onclick = executeAISignal;
+    els.aiExecuteBtn.onclick = refreshAISignal; // << agora só atualiza análise
+    els.aiAutoBtn.onclick = executeAIAuto;     // << auto-execução conservadora
 
     // ========= BOOT =========
     function extractAndBoot(){
