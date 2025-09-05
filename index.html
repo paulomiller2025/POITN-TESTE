@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!DOCTYPE html> 
 <html lang="pt">
 <head>
   <meta charset="utf-8" />
@@ -20,7 +20,6 @@
     select:focus,select:active{ color:#000 !important } select option{ color:#000 }
     #chartWrap{ height:480px; transition:height .2s ease } @media (max-width:1024px){ #chartWrap{ height:420px } }
     .pl-green{ color:#22c55e !important } .pl-red{ color:#ef4444 !important }
-    .sep{ height:1px; background:#1e2a46; margin-top:.75rem; margin-bottom:.75rem; }
 
     /* Painel Robô IA (drawer) */
     #aiPanel{
@@ -28,6 +27,14 @@
       transform: translateX(120%); transition: transform .25s ease; z-index:60;
     }
     #aiPanel.open{ transform: translateX(0); }
+
+    /* Separador fino */
+    .sep{ height:1px; background:#1e2a46; margin-top:.75rem; margin-bottom:.75rem; }
+
+    /* Dropdown do menu */
+    .menu-card{ background:var(--card); border:1px solid #1e2a46; box-shadow:0 12px 30px rgba(0,0,0,.35) }
+    .tab-btn{ padding:.4rem .7rem; border-radius:.6rem; font-size:.85rem }
+    .tab-btn.active{ background:#1b2740; color:#e6edf7; border:1px solid #2a395d }
   </style>
 </head>
 <body>
@@ -40,11 +47,68 @@
           <p class="text-xs text-slate-400">App ID: 98640 • OAuth + WebSocket</p>
         </div>
       </div>
-      <div class="flex items-center gap-2">
+      <div class="flex items-center gap-2 relative">
         <button id="loginBtn" class="btn px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm">Conectar</button>
         <button id="logoutBtn" class="btn px-3 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-slate-100 text-sm hidden">Desconectar</button>
+
+        <!-- Botão de afiliado -->
         <a href="https://track.deriv.com/_IbwR-HIUYbJ8zg8lBvFoLmNd7ZgqdRLk/1/" target="_blank" rel="noopener"
            class="btn px-4 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white text-sm">Cadastre-se na Corretora Deriv</a>
+
+        <!-- MENU à direita do botão de cadastro -->
+        <div class="relative">
+          <button id="menuBtn" class="btn px-3 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-slate-100 text-sm">Menu ▾</button>
+          <div id="menuDropdown" class="hidden absolute right-0 mt-2 w-[560px] rounded-xl p-3 menu-card">
+            <!-- Abas -->
+            <div class="flex gap-2 mb-3">
+              <button data-tab="treinamento" class="tab-btn active">Treinamento</button>
+              <button data-tab="termos" class="tab-btn">Termos e Condições</button>
+              <button data-tab="download" class="tab-btn">Download</button>
+            </div>
+            <!-- Conteúdos -->
+            <div id="tab-treinamento" class="space-y-3">
+              <div class="text-sm text-slate-300">Cole o link do YouTube e clique em <b>Adicionar</b>. Selecione na lista para tocar.</div>
+              <div class="flex gap-2">
+                <input id="ytUrlInput" class="pill flex-1 px-3 py-2 rounded-xl text-sm bg-transparent text-slate-200" placeholder="https://www.youtube.com/watch?v=..." />
+                <button id="ytAddBtn" class="btn px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm">Adicionar</button>
+              </div>
+              <div class="grid grid-cols-3 gap-3">
+                <div class="col-span-2">
+                  <div class="aspect-video glass rounded-xl overflow-hidden">
+                    <iframe id="ytPlayer" class="w-full h-full" src="" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen loading="lazy"></iframe>
+                  </div>
+                </div>
+                <div class="col-span-1">
+                  <div id="ytList" class="glass rounded-xl p-2 max-h-56 overflow-auto text-sm space-y-1">
+                    <!-- itens inseridos via JS -->
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div id="tab-termos" class="hidden space-y-2">
+              <div class="text-sm text-slate-300">Insira abaixo os termos e condições da plataforma:</div>
+              <div id="termsArea" contenteditable="true" class="glass rounded-xl p-3 text-sm min-h-[220px] leading-6 outline-none">
+                <p><i>Coloque aqui seu texto longo de Termos e Condições...</i></p>
+              </div>
+            </div>
+
+            <div id="tab-download" class="hidden space-y-3">
+              <div class="text-sm text-slate-300">Arquivos para download:</div>
+              <div class="grid grid-cols-2 gap-2">
+                <!-- sete botões de download (placeholders) -->
+                <a class="btn px-3 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white text-sm text-center" href="#" download>Arquivo 1</a>
+                <a class="btn px-3 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white text-sm text-center" href="#" download>Arquivo 2</a>
+                <a class="btn px-3 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white text-sm text-center" href="#" download>Arquivo 3</a>
+                <a class="btn px-3 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white text-sm text-center" href="#" download>Arquivo 4</a>
+                <a class="btn px-3 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white text-sm text-center" href="#" download>Arquivo 5</a>
+                <a class="btn px-3 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white text-sm text-center" href="#" download>Arquivo 6</a>
+                <a class="btn px-3 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white text-sm text-center col-span-2" href="#" download>Arquivo 7</a>
+              </div>
+            </div>
+          </div>
+        </div>
+        <!-- /MENU -->
       </div>
     </div>
   </header>
@@ -63,7 +127,6 @@
         <div class="flex flex-col gap-2">
           <div class="flex items-center gap-3">
             <label class="text-sm text-slate-300">Conta:</label>
-            <!-- Select com comportamento customizado -->
             <select id="accountSelect" class="pill px-3 py-2 rounded-xl text-sm text-slate-200 bg-transparent" disabled></select>
           </div>
           <div class="flex items-center gap-3">
@@ -109,6 +172,7 @@
           </div>
         </div>
         <div id="chartWrap" class="glass rounded-xl"></div>
+        <!-- Preço em tempo real (oculto) -->
         <div class="glass rounded-xl p-4 mt-3 hidden">
           <div id="tickSymbol" class="text-sm text-slate-400">—</div>
           <div class="text-3xl font-semibold mt-1" id="tickPrice">—</div>
@@ -162,7 +226,7 @@
 
           <div class="sep"></div>
 
-          <!-- Robô IA + IA Auto -->
+          <!-- NOVOS BOTÕES IA (abaixo dos UP/DOWN) -->
           <div class="flex gap-3">
             <button id="aiOpenBtn" class="btn flex-1 px-4 py-3 rounded-xl bg-sky-700 hover:bg-sky-600 text-white disabled:opacity-40" disabled>
               <span class="inline-flex items-center gap-2">
@@ -214,6 +278,16 @@
     </div>
   </div>
 
+  <!-- Botão WhatsApp (próximo do rodapé) -->
+  <a href="https://wa.me/SEUNUMERO" target="_blank" rel="noopener"
+     class="fixed bottom-5 right-5 z-50 inline-flex items-center gap-2 px-4 py-3 rounded-full bg-green-600 hover:bg-green-500 text-white shadow-lg">
+    <svg width="22" height="22" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+      <path d="M19.6 17.4c-.3-.2-1.7-.9-2-.9s-.5.1-.7.4-.8.9-.9 1-.3.1-.6 0a9.5 9.5 0 0 1-2.8-1.7 10 10 0 0 1-1.9-2.4c-.2-.4 0-.5.1-.6l.3-.3c.1-.1.1-.2.2-.3s.1-.2.2-.3a.6.6 0 0 0 0-.6c0-.2-.7-1.8-.9-2.1s-.5-.5-.7-.5h-.6c-.2 0-.5.1-.7.4s-1 1-1 2.4 1 2.8 1.2 3 .2.4.5.8a11.5 11.5 0 0 0 4.1 3.8 13 13 0 0 0 2.6 1 .7.7 0 0 0 .7-.1c.2-.2.8-.9 1-1.2s.4-.3.7-.2 1.7.8 2 .9.5.1.7 0l.5-.2c.2-.1.5-.2.6-.3s.2-.2.2-.3-.1-.3-.3-.4Z" fill="#fff"/>
+      <path d="M27.6 4.4A14.7 14.7 0 0 0 3.7 24.2L2 30l6-1.6a14.7 14.7 0 0 0 19.6-24Zm-3 18.6A10.6 10.6 0 1 1 26.6 10a10.6 10.6 0 0 1-2 13Z" fill="#fff"/>
+    </svg>
+    WhatsApp
+  </a>
+
   <script>
     // ========= CONFIG =========
     const APP_ID  = 98640;
@@ -222,14 +296,6 @@
 
     const ALL_MULTS = [10,15,20,40,50,80,100,150,200,250,300,350,400,450,500,700,800,1000,1300,1500,1600,2000,2500,3200];
     const DEFAULT_SYMBOL_REGEX = /Volatility 100 \(1s\)/i;
-
-    // IA thresholds
-    const SIGNAL_THRESHOLD = 0.55;    // Robô IA: mais assertivo nas recomendações
-    const AUTO_CONF_MIN    = 80;      // IA Auto: confiança mínima 80%
-    const AUTO_ADX_MIN     = 25;      // IA Auto: ADX mínimo 25
-    const AUTO_COOLDOWN_MS = 12000;   // IA Auto: cooldown 12s
-    const BB_EDGE_UP = 0.998;         // Evitar entrada muito perto da BB superior
-    const BB_EDGE_DN = 1.002;         // Evitar entrada muito perto da BB inferior
 
     // ========= ESTADO =========
     let ws=null, authorized=false, loginId=null, currency='USD';
@@ -245,7 +311,7 @@
 
     const barsCache = new Map();
 
-    // ÁUDIO
+    // ÁUDIO (cash ao lucrar)
     let audioCtx = null;
     function playCash(){ try{
       if(!audioCtx) audioCtx = new (window.AudioContext||window.webkitAudioContext)();
@@ -272,12 +338,21 @@
       tfSelect:document.getElementById('tfSelect'), chartWrap:document.getElementById('chartWrap'), multBadge:document.getElementById('multBadge'),
       posStatus:document.getElementById('posStatus'), positionsList:document.getElementById('positionsList'), resetBtn:document.getElementById('resetBtn'),
 
+      // IA
       aiOpenBtn:document.getElementById('aiOpenBtn'), aiAutoBtn:document.getElementById('aiAutoBtn'),
       aiPanel:document.getElementById('aiPanel'), aiCloseBtn:document.getElementById('aiCloseBtn'),
       aiSignal:document.getElementById('aiSignal'), aiConfidence:document.getElementById('aiConfidence'),
       aiIndicators:document.getElementById('aiIndicators'), aiUpdatedAt:document.getElementById('aiUpdatedAt'),
       aiExecuteBtn:document.getElementById('aiExecuteBtn'),
       aiHold:document.getElementById('aiHold'), aiSummary:document.getElementById('aiSummary'),
+
+      // Menu
+      menuBtn:document.getElementById('menuBtn'),
+      menuDropdown:document.getElementById('menuDropdown'),
+      ytUrlInput:document.getElementById('ytUrlInput'),
+      ytAddBtn:document.getElementById('ytAddBtn'),
+      ytList:document.getElementById('ytList'),
+      ytPlayer:document.getElementById('ytPlayer'),
     };
 
     // ========= UI helpers =========
@@ -291,6 +366,7 @@
       if(dis){ els.balanceInput.value=''; els.balanceInput.placeholder='—'; }
     }
 
+    // Mensagens PT com prefixo “Caro Trader:”
     function translateError(msg){
       let m=String(msg||'');
       m = m.replace(/Your account balance \(([^)]+)\) is insufficient to buy this contract \(([^)]+)\)\./i, 'Saldo da sua conta ($1) é insuficiente para comprar este contrato ($2).');
@@ -474,8 +550,7 @@
           const arr = barsCache.get(key) || [];
           if(arr.length){
             const last = arr[arr.length-1];
-            const bt = Math.floor(epoch/currentGranularity)*currentGranularity;
-            if(last.time===bt){
+            if(last.time===Math.floor(epoch/currentGranularity)*currentGranularity){
               last.high = Math.max(last.high, q);
               last.low  = Math.min(last.low, q);
               last.close = q;
@@ -601,16 +676,11 @@
       }
     }
 
-    // ========= Indicadores =========
+    // ========= Indicadores (IA) =========
     function sma(vals, p){ if(vals.length<p) return []; const out=[]; let s=0; for(let i=0;i<vals.length;i++){ s+=vals[i]; if(i>=p) s-=vals[i-p]; if(i>=p-1) out.push(s/p); } return out; }
     function ema(arr, period, accessor=(x)=>x){
       const k = 2/(period+1); let emaPrev;
-      return arr.map((v,i)=>{
-        const val = accessor(v);
-        if(i===0){ emaPrev = val; return val; }
-        emaPrev = val*k + emaPrev*(1-k);
-        return emaPrev;
-      });
+      return arr.map((v,i)=>{ const val = accessor(v); if(i===0){ emaPrev = val; return val; } emaPrev = val*k + emaPrev*(1-k); return emaPrev; });
     }
     function rsi(arr, period=14, accessor=(x)=>x){
       if(arr.length<period+1) return [];
@@ -669,7 +739,6 @@
       ATR/=period; pDM/=period; mDM/=period;
       const plusDI=[...new Array(arr.length).fill(null)], minusDI=[...new Array(arr.length).fill(null)], DX=[...new Array(arr.length).fill(null)];
       plusDI[period] = (pDM/ATR)*100; minusDI[period]=(mDM/ATR)*100; DX[period]= (Math.abs(plusDI[period]-minusDI[period])/(plusDI[period]+minusDI[period]))*100;
-
       for(let i=period+1;i<arr.length;i++){
         ATR = (ATR*(period-1)+tr[i])/period;
         pDM = (pDM*(period-1)+plusDM[i])/period;
@@ -732,38 +801,6 @@
       }
       return res;
     }
-    function donchian(arr, period=20){
-      const out=new Array(arr.length).fill(null).map(()=>({up:null,mid:null,dn:null}));
-      for(let i=period-1;i<arr.length;i++){
-        let h=-Infinity,l=Infinity; for(let j=i-period+1;j<=i;j++){ h=Math.max(h,arr[j].high); l=Math.min(l,arr[j].low); }
-        const mid=(h+l)/2; out[i]={up:h, mid, dn:l};
-      }
-      return out;
-    }
-    function ichimoku(arr){ // Tenkan(9), Kijun(26), SenkouA, SenkouB(52)
-      const len=arr.length;
-      const out=new Array(len).fill(null).map(()=>({tenkan:null,kijun:null,spanA:null,spanB:null}));
-      function hl(period, idx){
-        let h=-Infinity,l=Infinity;
-        for(let j=idx-period+1;j<=idx;j++){ if(j<0) continue; h=Math.max(h,arr[j].high); l=Math.min(l,arr[j].low); }
-        return {h,l};
-      }
-      for(let i=0;i<len;i++){
-        if(i>=8){ const {h,l}=hl(9,i); out[i].tenkan=(h+l)/2; }
-        if(i>=25){ const {h,l}=hl(26,i); out[i].kijun=(h+l)/2; }
-        if(i>=25 && out[i].tenkan!=null && out[i].kijun!=null){ out[i].spanA=(out[i].tenkan+out[i].kijun)/2; }
-        if(i>=51){ const {h,l}=hl(52,i); out[i].spanB=(h+l)/2; }
-      }
-      return out;
-    }
-    function vwapApprox(arr){ // sem volume → usa média cumulativa de preço típico
-      let sumTP=0, sumN=0; const out=new Array(arr.length).fill(null);
-      for(let i=0;i<arr.length;i++){
-        const tp=(arr[i].high+arr[i].low+arr[i].close)/3;
-        sumTP+=tp; sumN+=1; out[i]=sumTP/(sumN||1);
-      }
-      return out;
-    }
     function resample(bars, factor){
       if(!bars || bars.length===0 || factor<=1) return bars;
       const out=[];
@@ -779,7 +816,7 @@
       return out;
     }
 
-    // Score IA com mais indicadores (+menos neutro p/ recomendações)
+    // Score IA
     function computeAI(bars){
       if(!bars || bars.length<60) return {signal:'Neutro', conf:0.0, holdSec:0, details:{}, summary:'Dados insuficientes.'};
 
@@ -796,16 +833,12 @@
       const { k:stochK, d:stochD } = stoch(bars,14,3);
       const bb = bbands(bars,20,2);
       const st = supertrend(bars,10,3);
-      const dch = donchian(bars,20);
-      const ich = ichimoku(bars);
-      const vwap = vwapApprox(bars);
 
       const e9 = ema9.at(-1), e21=ema21.at(-1), e50=ema50.at(-1);
       const rLast = rsi14.at(-1) ?? 50;
       const mLast = macdLine.at(-1) ?? 0;
       const sLast = macdSig.at(-1) ?? 0;
       const hLast = hist.at(-1) ?? 0;
-      const atrLast = atr14.at(-1) ?? 0;
 
       const adxLast = adx14.at(-1) ?? 0;
       const pdi = plusDI.at(-1) ?? 0;
@@ -816,9 +849,6 @@
 
       const bbLast = bb.at(-1) || {mid:null,up:null,dn:null};
       const stLast = st.at(-1) || {dir:0,value:null};
-      const dchLast = dch.at(-1) || {up:null,mid:null,dn:null};
-      const ichLast = ich.at(-1) || {tenkan:null,kijun:null,spanA:null,spanB:null};
-      const vwapLast = vwap.at(-1) ?? last.close;
 
       const barsHTF = resample(bars.slice(-180), 3);
       const ema50H = ema(barsHTF,50, x=>x.close).at(-1);
@@ -827,99 +857,57 @@
       const macdUpH = (macdH.macdLine.at(-1) ?? 0) > (macdH.signal.at(-1) ?? 0);
       const macdDnH = (macdH.macdLine.at(-1) ?? 0) < (macdH.signal.at(-1) ?? 0);
 
-      // Ichimoku direção cloud
-      const cloudUp = (ichLast.spanA!=null && ichLast.spanB!=null && last.close > Math.max(ichLast.spanA, ichLast.spanB));
-      const cloudDn = (ichLast.spanA!=null && ichLast.spanB!=null && last.close < Math.min(ichLast.spanA, ichLast.spanB));
-      const tenkanAboveKijun = (ichLast.tenkan!=null && ichLast.kijun!=null && ichLast.tenkan > ichLast.kijun);
-      const tenkanBelowKijun  = (ichLast.tenkan!=null && ichLast.kijun!=null && ichLast.tenkan < ichLast.kijun);
-
-      // VWAP posicionamento
-      const aboveVWAP = last.close > vwapLast;
-      const belowVWAP = last.close < vwapLast;
-
-      // Tendência base + HTF
       const trendUp   = last.close>e50 && e9>e21 && mLast>sLast && hLast>0 && stLast.dir===1;
       const trendDown = last.close<e50 && e9<e21 && mLast<sLast && hLast<0 && stLast.dir===-1;
       const trendUpHTF   = (barsHTF.at(-1)?.close || 0) > (ema50H || -Infinity) && stH.dir===1 && macdUpH;
       const trendDownHTF = (barsHTF.at(-1)?.close || 0) < (ema50H || Infinity) && stH.dir===-1 && macdDnH;
 
-      // Força / filtros
       const adxStrong = adxLast>=20;
       const diBull = pdi>mdi;
       const diBear = mdi>pdi;
-      const stochBull = kLast>dLast && kLast<85;
-      const stochBear = kLast<dLast && kLast>15;
-      const nearUpper = bbLast.up && last.close > bbLast.up*BB_EDGE_UP;
-      const nearLower = bbLast.dn && last.close < bbLast.dn*BB_EDGE_DN;
+      const stochBull = kLast>dLast && kLast<80;
+      const stochBear = kLast<dLast && kLast>20;
+      const nearUpper = bbLast.up && last.close > bbLast.up*0.995;
+      const nearLower = bbLast.dn && last.close < bbLast.dn*1.005;
 
-      // Scoring
       let upScore=0, downScore=0, reasons=[];
       function add(reason, weight, dir){ if(dir==='up') upScore+=weight; else downScore+=weight; reasons.push(reason); }
 
-      if(trendUp){ add('Tendência UP (EMA/MACD/Supertrend)', 0.28, 'up'); }
-      if(trendDown){ add('Tendência DOWN (EMA/MACD/Supertrend)', 0.28, 'down'); }
+      if(trendUp){ add('Tendência UP (EMA/MACD/Supertrend)', 0.30, 'up'); }
+      if(trendDown){ add('Tendência DOWN (EMA/MACD/Supertrend)', 0.30, 'down'); }
 
-      if(trendUpHTF){ add('Confirmação UP no TF superior', 0.18, 'up'); }
-      if(trendDownHTF){ add('Confirmação DOWN no TF superior', 0.18, 'down'); }
+      if(trendUpHTF){ add('Confirmação UP no TF superior', 0.20, 'up'); }
+      if(trendDownHTF){ add('Confirmação DOWN no TF superior', 0.20, 'down'); }
 
-      if(adxStrong && diBull){ add('Força (ADX) e +DI>−DI', 0.12, 'up'); }
-      if(adxStrong && diBear){ add('Força (ADX) e −DI>+DI', 0.12, 'down'); }
+      if(adxStrong && diBull){ add('Força (ADX) e +DI>−DI', 0.15, 'up'); }
+      if(adxStrong && diBear){ add('Força (ADX) e −DI>+DI', 0.15, 'down'); }
 
-      if(stochBull){ add('Estocástico favorável (alta)', 0.07, 'up'); }
-      if(stochBear){ add('Estocástico favorável (baixa)', 0.07, 'down'); }
+      if(stochBull){ add('Estocástico favorável (alta)', 0.10, 'up'); }
+      if(stochBear){ add('Estocástico favorável (baixa)', 0.10, 'down'); }
 
-      if(bbLast.mid && last.close>bbLast.mid){ add('Preço acima da banda média (BB)', 0.05, 'up'); }
-      if(bbLast.mid && last.close<bbLast.mid){ add('Preço abaixo da banda média (BB)', 0.05, 'down'); }
+      if(bbLast.mid && last.close>bbLast.mid){ add('Preço acima da banda média (BB)', 0.08, 'up'); }
+      if(bbLast.mid && last.close<bbLast.mid){ add('Preço abaixo da banda média (BB)', 0.08, 'down'); }
 
-      // Donchian breakout / suporte-resistência
-      if(dchLast.up && last.close > dchLast.up*0.999) add('Rompendo Donchian superior', 0.08, 'up');
-      if(dchLast.dn && last.close < dchLast.dn*1.001) add('Rompendo Donchian inferior', 0.08, 'down');
+      if(nearUpper){ downScore += 0.05; reasons.push('Perto da banda superior (risco de correção)'); }
+      if(nearLower){ upScore   += 0.05; reasons.push('Perto da banda inferior (risco de repique)'); }
 
-      // Ichimoku cloud / tenkan-kijun
-      if(cloudUp) add('Acima da nuvem Ichimoku', 0.08, 'up');
-      if(cloudDn) add('Abaixo da nuvem Ichimoku', 0.08, 'down');
-      if(tenkanAboveKijun) add('Tenkan > Kijun (bull)', 0.05, 'up');
-      if(tenkanBelowKijun) add('Tenkan < Kijun (bear)', 0.05, 'down');
-
-      // VWAP
-      if(aboveVWAP) add('Acima do VWAP', 0.04, 'up');
-      if(belowVWAP) add('Abaixo do VWAP', 0.04, 'down');
-
-      // Penalidades (bordas BB)
-      if(nearUpper){ downScore += 0.04; reasons.push('Perto da banda superior (risco de correção)'); }
-      if(nearLower){ upScore   += 0.04; reasons.push('Perto da banda inferior (risco de repique)'); }
-
-      if(rLast>75) { downScore+=0.03; reasons.push('RSI sobrecomprado'); }
-      if(rLast<25) { upScore  +=0.03; reasons.push('RSI sobrevendido'); }
-
-      // Confiança (mais “falante” no Robô IA)
-      let confWeighted = Math.max(upScore,downScore);
-      confWeighted = Math.min(0.97, Math.max(0.20, confWeighted+0.30));
+      let conf = Math.max(upScore,downScore);
+      conf = Math.min(0.95, Math.max(0.20, conf+0.35));
 
       let signal='Neutro';
-      if(upScore>downScore && upScore>=SIGNAL_THRESHOLD) signal='UP';
-      else if(downScore>upScore && downScore>=SIGNAL_THRESHOLD) signal='DOWN';
+      if(upScore>downScore && upScore>=0.70) signal='UP';
+      else if(downScore>upScore && downScore>=0.70) signal='DOWN';
 
       let candles=2;
-      if(adxLast>=25 && (trendUpHTF||trendDownHTF)) candles=4;
-      if(adxLast>=32) candles=5;
+      if(adxStrong && (trendUpHTF||trendDownHTF)) candles=4;
+      if(adxLast>=28) candles=5;
       const holdSec = candles * (currentGranularity||60);
 
       return {
         signal,
-        conf: +(confWeighted*100).toFixed(1),
+        conf: +(conf*100).toFixed(1),
         holdSec,
-        details:{
-          close:last.close, ema9:e9, ema21:e21, ema50:e50, rsi:rLast,
-          macd:mLast, macdSig:sLast, macdHist:hLast, atr:atrLast,
-          adx:adxLast, plusDI:pdi, minusDI:mdi,
-          stochK:kLast, stochD:dLast,
-          bbMid:bbLast.mid, bbUp:bbLast.up, bbDn:bbLast.dn,
-          stDir:stLast.dir, stVal:stLast.value,
-          dchUp:dchLast.up, dchMid:dchLast.mid, dchDn:dchLast.dn,
-          tenkan:ichLast.tenkan, kijun:ichLast.kijun, spanA:ichLast.spanA, spanB:ichLast.spanB,
-          vwap:vwapLast
-        },
+        details:{ close:last.close, rsi:rsi14.at(-1)??50, stDir:stLast.dir, stVal:stLast.value, bbUp:bbLast.up, bbDn:bbLast.dn, stochK:stochK.at(-1)??50, stochD:stochD.at(-1)??50, adx:adxLast, plusDI:pdi, minusDI:mdi, ema9:ema9.at(-1), ema21:ema21.at(-1), ema50:ema50.at(-1), macd:mLast, macdSig:sLast, macdHist:hLast, atr:atr14.at(-1)??0, bbMid:bbLast.mid },
         summary: reasons.join(' · ')
       };
     }
@@ -927,7 +915,7 @@
     let lastAICalcAt = 0;
     function maybeUpdateAI(force=false){
       const now = Date.now();
-      if(!force && now-lastAICalcAt<600) return;
+      if(!force && now-lastAICalcAt<500) return;
       lastAICalcAt = now;
 
       const key = `${currentSymbol}|${currentGranularity}`;
@@ -958,9 +946,7 @@
         <div class="glass rounded-lg p-2"><div class="text-[11px] text-slate-400">ADX(14) / +DI / −DI</div><div>${(d.adx||0).toFixed(2)} / ${(d.plusDI||0).toFixed(2)} / ${(d.minusDI||0).toFixed(2)}</div></div>
         <div class="glass rounded-lg p-2"><div class="text-[11px] text-slate-400">%K / %D (Stoch)</div><div>${(d.stochK||0).toFixed(2)} / ${(d.stochD||0).toFixed(2)}</div></div>
         <div class="glass rounded-lg p-2"><div class="text-[11px] text-slate-400">BB Mid/Up/Dn</div><div>${(d.bbMid||0).toFixed(5)} / ${(d.bbUp||0).toFixed(5)} / ${(d.bbDn||0).toFixed(5)}</div></div>
-        <div class="glass rounded-lg p-2"><div class="text-[11px] text-slate-400">Donchian U/M/D (20)</div><div>${(d.dchUp||0).toFixed(5)} / ${(d.dchMid||0).toFixed(5)} / ${(d.dchDn||0).toFixed(5)}</div></div>
-        <div class="glass rounded-lg p-2"><div class="text-[11px] text-slate-400">Ichimoku T/K/SpanA/SpanB</div><div>${(d.tenkan||0).toFixed(5)} / ${(d.kijun||0).toFixed(5)} / ${(d.spanA||0).toFixed(5)} / ${(d.spanB||0).toFixed(5)}</div></div>
-        <div class="glass rounded-lg p-2"><div class="text-[11px] text-slate-400">VWAP</div><div>${(d.vwap||0).toFixed(5)}</div></div>
+        <div class="glass rounded-lg p-2"><div class="text-[11px] text-slate-400">Supertrend</div><div>${d.stDir===1?'Alta':'Baixa'} @ ${(d.stVal||0).toFixed(5)}</div></div>
       `;
     }
 
@@ -975,20 +961,20 @@
     let lastAutoAt = 0;
     function executeAIAuto(){
       const now = Date.now();
-      if(now - lastAutoAt < AUTO_COOLDOWN_MS){ showTraderMessage('aguarde alguns segundos antes de nova execução automática.'); return; }
+      if(now - lastAutoAt < 8000){ showTraderMessage('aguarde alguns segundos antes de nova execução automática.'); return; }
       const res = maybeUpdateAI(true);
       if(!res){ showTraderMessage('dados insuficientes para analisar.'); return; }
 
-      const strongConf = res.conf >= AUTO_CONF_MIN;
+      const strongConf = res.conf >= 75;
       const d = res.details || {};
-      const adxOK = (d.adx||0) >= AUTO_ADX_MIN;
-      const rsiOK = (d.rsi||50) >= 35 && (d.rsi||50) <= 70;
-      const stochOK = (d.stochK!=null && d.stochD!=null) ? Math.abs(d.stochK - d.stochD) <= 35 : true;
-      const notNearBBEdge = !((d.bbUp && d.close>d.bbUp*BB_EDGE_UP) || (d.bbDn && d.close<d.bbDn*BB_EDGE_DN));
+      const adxOK = (d.adx||0) >= 22;
+      const rsiOK = (d.rsi||50) >= 35 && (d.rsi||50) <= 65;
+      const stochOK = (d.stochK!=null && d.stochD!=null) ? Math.abs(d.stochK - d.stochD) <= 30 : true;
+      const notNearBBEdge = !((d.bbUp && d.close>d.bbUp*0.998) || (d.bbDn && d.close<d.bbDn*1.002));
       const supertrendAgree = (res.signal==='UP' && d.stDir===1) || (res.signal==='DOWN' && d.stDir===-1);
 
       if(res.signal==='Neutro' || !strongConf || !adxOK || !rsiOK || !stochOK || !notNearBBEdge || !supertrendAgree){
-        showTraderMessage('Cenário conservador para auto-execução. Ajuste timeframe ou aguarde nova vela.');
+        showTraderMessage('Cenário ainda conservador/indefinido para auto-execução. Ajuste timeframe ou aguarde nova vela.');
         return;
       }
 
@@ -1053,7 +1039,7 @@
 
     function subscribeBalance(){
       if(balanceSubId){ send({ forget:balanceSubId }); balanceSubId=null; }
-      send({ balance:1, subscribe:1 });
+      send({ balance:1, subscribe:1 }); // atualização automática
     }
     function checkMultipliersAvailability(symbol){ send({ contracts_for:symbol, currency }); }
 
@@ -1155,38 +1141,7 @@
       new ResizeObserver(()=>{ lwChart.applyOptions({}); }).observe(els.chartWrap);
     }
 
-    function loadActiveSymbols(){ send({ active_symbols:'full' }); }
-
-    function subscribeTicks(symbol){
-      if(activeTicksSymbol===symbol && tickSubId){ return; }
-      if(tickSubId){ send({ forget: tickSubId }); tickSubId=null; }
-      send({ forget_all: 'ticks' });
-      activeTicksSymbol = null;
-
-      if(els.tickSymbol) els.tickSymbol.textContent=symbol; if(els.tickNote) els.tickNote.textContent='Recebendo ticks...';
-      send({ ticks:symbol, subscribe:1 });
-      ws.addEventListener('message', function once(e){ const d=JSON.parse(e.data);
-        if(d.msg_type==='tick'&&d.tick&&d.subscription&&d.subscription.id){ tickSubId=d.subscription.id; activeTicksSymbol = symbol; ws.removeEventListener('message',once); }
-      });
-    }
-
-    function loadCandles(symbol,granularitySec){
-      if(!symbol) return; currentSymbol=symbol; currentGranularity=Number(granularitySec||60);
-      const key = `${symbol}|${currentGranularity}`;
-      if(activeOHLCKey===key && ohlcSubId){ return; }
-
-      liveBar=null; if(candleSeries){ candleSeries.setData([]); }
-      if(ohlcSubId){ send({ forget: ohlcSubId }); ohlcSubId=null; }
-      send({ forget_all: 'candles' });
-      activeOHLCKey = null;
-
-      send({ ticks_history:symbol, adjust_start_time:1, count:300, end:'latest', style:'candles', granularity:currentGranularity });
-      send({ ohlc:1, symbol, granularity:currentGranularity, subscribe:1 });
-      ws.addEventListener('message', function once(e){ try{ const d=JSON.parse(e.data);
-        if(d.msg_type==='ohlc'&&d.subscription&&d.subscription.id){ ohlcSubId=d.subscription.id; activeOHLCKey = key; ws.removeEventListener('message',once);} }catch(err){} });
-    }
-
-    // ========= CONTA (select dinâmico: mostra só Demo/Real quando fechado) =========
+    // ========= CONTA: comportamento do select (Demo/Real fechado) =========
     function isDemoLogin(id){ return /VRTC/i.test(id||''); }
     function buildAccountClosedState(){
       const sel = els.accountSelect;
@@ -1210,6 +1165,16 @@
       });
     }
 
+    // ========= EVENTOS =========
+    els.loginBtn.onclick=()=>{ window.location.href=OAUTH_URL; };
+    els.logoutBtn.onclick=()=>{
+      positions.clear(); els.positionsList.innerHTML=''; updatePosStatus();
+      if(ws&&ws.readyState===1) ws.close();
+      forgetAllSubscriptions();
+      clearTokens(); setAuthUI(false); els.accountSelect.innerHTML=''; if(candleSeries) candleSeries.setData([]);
+    };
+
+    // Conta: abre lista ao focar; ao escolher autoriza e volta para Demo/Real
     els.accountSelect.addEventListener('focus', ()=>{
       const tokens=getStoredTokens(); if(!tokens.length) return;
       buildAccountOpenList();
@@ -1222,19 +1187,9 @@
       localStorage.setItem('POINT_SELECTED',JSON.stringify(chosen));
       if(ws&&ws.readyState===1) authorize(chosen.token,chosen.account,chosen.currency); else connectWS();
       setTimeout(()=>{ subscribeBalance(); },200);
-      // volta a mostrar "Conta Demo/Real"
-      setTimeout(buildAccountClosedState, 100);
+      setTimeout(buildAccountClosedState, 120);
     });
     els.accountSelect.addEventListener('blur', buildAccountClosedState);
-
-    // ========= EVENTOS =========
-    els.loginBtn.onclick=()=>{ window.location.href=OAUTH_URL; };
-    els.logoutBtn.onclick=()=>{
-      positions.clear(); els.positionsList.innerHTML=''; updatePosStatus();
-      if(ws&&ws.readyState===1) ws.close();
-      forgetAllSubscriptions();
-      clearTokens(); setAuthUI(false); els.accountSelect.innerHTML=''; if(candleSeries) candleSeries.setData([]);
-    };
 
     els.symbolSelect.onchange=(e)=>{
       const sym=e.target.value;
@@ -1269,8 +1224,61 @@
     // Robô IA painel
     els.aiOpenBtn.onclick = ()=>{ els.aiPanel.classList.add('open'); maybeUpdateAI(true); };
     els.aiCloseBtn.onclick = ()=> els.aiPanel.classList.remove('open');
-    els.aiExecuteBtn.onclick = refreshAISignal; // só atualiza análise
-    els.aiAutoBtn.onclick = executeAIAuto;     // auto-execução conservadora
+    els.aiExecuteBtn.onclick = refreshAISignal;
+    els.aiAutoBtn.onclick = executeAIAuto;
+
+    // MENU dropdown
+    els.menuBtn.addEventListener('click', (e)=>{
+      e.stopPropagation();
+      els.menuDropdown.classList.toggle('hidden');
+    });
+    document.addEventListener('click', (e)=>{
+      const dd = els.menuDropdown;
+      if(!dd.classList.contains('hidden') && !dd.contains(e.target) && e.target!==els.menuBtn){
+        dd.classList.add('hidden');
+      }
+    });
+    // Tabs
+    [...document.querySelectorAll('.tab-btn')].forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+        btn.classList.add('active');
+        const tab = btn.getAttribute('data-tab');
+        document.getElementById('tab-treinamento').classList.toggle('hidden', tab!=='treinamento');
+        document.getElementById('tab-termos').classList.toggle('hidden', tab!=='termos');
+        document.getElementById('tab-download').classList.toggle('hidden', tab!=='download');
+      });
+    });
+
+    // Treinamento: adicionar vídeo
+    function ytToEmbed(url){
+      try{
+        const u = new URL(url);
+        if(u.hostname.includes('youtu.be')){
+          const id = u.pathname.slice(1);
+          return `https://www.youtube.com/embed/${id}`;
+        }
+        if(u.hostname.includes('youtube.com')){
+          const id = u.searchParams.get('v');
+          if(id) return `https://www.youtube.com/embed/${id}`;
+        }
+      }catch(e){}
+      return '';
+    }
+    function addVideoItem(embedUrl){
+      const a = document.createElement('button');
+      a.className = 'w-full text-left px-2 py-1 rounded hover:bg-slate-800/60';
+      a.textContent = embedUrl.replace('https://www.youtube.com/embed/','');
+      a.onclick = ()=>{ els.ytPlayer.src = embedUrl; };
+      els.ytList.prepend(a);
+      if(!els.ytPlayer.src) els.ytPlayer.src = embedUrl;
+    }
+    els.ytAddBtn.addEventListener('click', ()=>{
+      const embed = ytToEmbed(els.ytUrlInput.value.trim());
+      if(!embed){ alert('Link inválido do YouTube.'); return; }
+      addVideoItem(embed);
+      els.ytUrlInput.value='';
+    });
 
     // ========= BOOT =========
     function extractAndBoot(){
@@ -1279,19 +1287,16 @@
       if(stored.length){
         els.accountSelect.disabled=false;
         connectWS();
-        // Autoriza automaticamente na 1ª conta
         const first=stored[0];
         localStorage.setItem('POINT_SELECTED',JSON.stringify(first));
         authorize(first.token,first.account,first.currency);
-        // mostre Conta Demo/Real quando fechado
         setTimeout(buildAccountClosedState, 200);
       }else{
         connectWS(); initChart();
       }
     }
-    function authorize(token,acct,cur){ currency=(cur||'USD').toUpperCase(); send({ authorize:token, passthrough:{acct} }); }
 
-    // Multipliers
+    function authorize(token,acct,cur){ currency=(cur||'USD').toUpperCase(); send({ authorize:token, passthrough:{acct} }); }
     function checkMultipliersAvailability(symbol){ send({ contracts_for:symbol, currency }); }
 
     extractAndBoot();
